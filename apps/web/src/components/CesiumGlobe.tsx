@@ -192,13 +192,15 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
         const flatDegrees = coords.flat();
         const flatLoopDegrees = loopCoords.flat();
 
-        // 1. Translucent plot polygon fill
+        // 1. Translucent plot polygon fill (clamped to terrain and 3D tiles)
         plotPolygonEntityRef.current = viewer.entities.add({
           name: "Plot Boundary Area",
           polygon: {
-            hierarchy: Cesium.Cartesian3.fromDegreesArray(flatDegrees),
-            material: Cesium.Color.fromCssColorString("rgba(56, 189, 248, 0.25)"),
-            height: 0.1,
+            hierarchy: new Cesium.PolygonHierarchy(
+              Cesium.Cartesian3.fromDegreesArray(flatDegrees)
+            ),
+            material: Cesium.Color.fromCssColorString("rgba(56, 189, 248, 0.3)"),
+            classificationType: Cesium.ClassificationType.BOTH,
           },
         });
 
@@ -207,38 +209,38 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
           name: "Plot Outline",
           polyline: {
             positions: Cesium.Cartesian3.fromDegreesArray(flatLoopDegrees),
-            width: 3.5,
+            width: 4.0,
             material: Cesium.Color.fromCssColorString("#38bdf8"),
             clampToGround: true,
           },
         });
 
-        // 3. Corner pin dots
+        // 3. Corner pin dots (clamped to ground)
         coords.forEach((pt, idx) => {
           const marker = viewer.entities.add({
             name: `Plot Corner ${idx + 1}`,
-            position: Cesium.Cartesian3.fromDegrees(pt[0], pt[1], 0.2),
+            position: Cesium.Cartesian3.fromDegrees(pt[0], pt[1]),
             point: {
-              pixelSize: 8,
-              color: Cesium.Color.fromCssColorString("#67e8f9"),
-              outlineColor: Cesium.Color.BLACK,
-              outlineWidth: 1.5,
+              pixelSize: 10,
+              color: Cesium.Color.fromCssColorString("#38bdf8"),
+              outlineColor: Cesium.Color.fromCssColorString("#0f172a"),
+              outlineWidth: 2,
+              heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
               disableDepthTestDistance: Number.POSITIVE_INFINITY,
             },
           });
           markerEntitiesRef.current.push(marker);
         });
 
-        // 4. Centroid label
-        // 4. Edge dimension labels (feet & metres)
+        // 4. Edge dimension labels (feet & metres, clamped to ground)
         edgeLabelEntitiesRef.current.forEach((e) => viewer.entities.remove(e));
         edgeLabelEntitiesRef.current = [];
 
         for (let i = 0; i < coords.length; i++) {
           const p1 = coords[i];
           const p2 = coords[(i + 1) % coords.length];
-          const c1 = Cesium.Cartesian3.fromDegrees(p1[0], p1[1], 0);
-          const c2 = Cesium.Cartesian3.fromDegrees(p2[0], p2[1], 0);
+          const c1 = Cesium.Cartesian3.fromDegrees(p1[0], p1[1]);
+          const c2 = Cesium.Cartesian3.fromDegrees(p2[0], p2[1]);
           const distM = Cesium.Cartesian3.distance(c1, c2);
           const distFt = distM * 3.28084;
 
@@ -246,19 +248,20 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
           const midLat = (p1[1] + p2[1]) / 2;
           const edgeTag = viewer.entities.add({
             name: `Edge ${i + 1} Dimension`,
-            position: Cesium.Cartesian3.fromDegrees(midLon, midLat, 0.4),
+            position: Cesium.Cartesian3.fromDegrees(midLon, midLat),
             label: {
               text: `${distFt.toFixed(1)} ft (${distM.toFixed(1)}m)`,
-              font: "bold 11px 'Inter', sans-serif",
+              font: "bold 12px 'Inter', sans-serif",
               style: Cesium.LabelStyle.FILL_AND_OUTLINE,
               fillColor: Cesium.Color.fromCssColorString("#f1f5f9"),
               outlineColor: Cesium.Color.fromCssColorString("#090d16"),
               outlineWidth: 3,
-              backgroundColor: Cesium.Color.fromCssColorString("rgba(15, 23, 42, 0.75)"),
+              backgroundColor: Cesium.Color.fromCssColorString("rgba(15, 23, 42, 0.85)"),
               showBackground: true,
-              backgroundPadding: new Cesium.Cartesian2(6, 3),
+              backgroundPadding: new Cesium.Cartesian2(7, 4),
               verticalOrigin: Cesium.VerticalOrigin.CENTER,
               horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
+              heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
               disableDepthTestDistance: Number.POSITIVE_INFINITY,
             },
           });
@@ -275,18 +278,19 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
         if (label) {
           plotLabelEntityRef.current = viewer.entities.add({
             name: "Plot Info Label",
-            position: Cesium.Cartesian3.fromDegrees(centerLon, centerLat, 0.5),
+            position: Cesium.Cartesian3.fromDegrees(centerLon, centerLat),
             label: {
               text: `📐 ${label}`,
-              font: "bold 13px 'Outfit', sans-serif",
+              font: "bold 14px 'Outfit', sans-serif",
               style: Cesium.LabelStyle.FILL_AND_OUTLINE,
               fillColor: Cesium.Color.fromCssColorString("#38bdf8"),
               outlineColor: Cesium.Color.BLACK,
               outlineWidth: 3,
-              backgroundColor: Cesium.Color.fromCssColorString("rgba(15, 23, 42, 0.85)"),
+              backgroundColor: Cesium.Color.fromCssColorString("rgba(15, 23, 42, 0.9)"),
               showBackground: true,
-              backgroundPadding: new Cesium.Cartesian2(8, 4),
+              backgroundPadding: new Cesium.Cartesian2(10, 5),
               verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+              heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
               disableDepthTestDistance: Number.POSITIVE_INFINITY,
             },
           });
@@ -700,28 +704,28 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
 
         const cLon = targetLng ?? lastPlotCenterRef.current?.[0] ?? 74.3587;
         const cLat = targetLat ?? lastPlotCenterRef.current?.[1] ?? 31.5204;
+        const targetCartesian = Cesium.Cartesian3.fromDegrees(cLon, cLat);
+        const sphere = new Cesium.BoundingSphere(targetCartesian, 0);
 
         if (mode === "2d") {
-          // Orthographic top-down CAD view
-          viewer.camera.flyTo({
-            destination: Cesium.Cartesian3.fromDegrees(cLon, cLat, 160),
-            orientation: {
-              heading: Cesium.Math.toRadians(0),
-              pitch: Cesium.Math.toRadians(-90),
-              roll: 0,
-            },
-            duration: 1.5,
+          // Top-down CAD orthogonal view
+          viewer.camera.flyToBoundingSphere(sphere, {
+            offset: new Cesium.HeadingPitchRange(
+              0,
+              Cesium.Math.toRadians(-89.5),
+              140.0
+            ),
+            duration: 1.2,
           });
         } else {
           // 3D architectural perspective view
-          viewer.camera.flyTo({
-            destination: Cesium.Cartesian3.fromDegrees(cLon, cLat, 80),
-            orientation: {
-              heading: Cesium.Math.toRadians(25),
-              pitch: Cesium.Math.toRadians(-30),
-              roll: 0,
-            },
-            duration: 1.5,
+          viewer.camera.flyToBoundingSphere(sphere, {
+            offset: new Cesium.HeadingPitchRange(
+              Cesium.Math.toRadians(25),
+              Cesium.Math.toRadians(-32),
+              95.0
+            ),
+            duration: 1.2,
           });
         }
       },

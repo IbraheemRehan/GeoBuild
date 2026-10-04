@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import type { MapStyleKey, CesiumGlobeRef } from "./CesiumGlobe";
+import type { PlotPresetKey } from "./PlotSelector";
 
 export interface Neighborhood {
   name: string;
@@ -23,6 +24,16 @@ interface MapControlsProps {
   neighborhoods: Neighborhood[];
   currentCityName: string;
   onSelectNeighborhood: (n: Neighborhood) => void;
+  selectedPreset?: PlotPresetKey | "custom" | null;
+  onSelectPreset?: (preset: PlotPresetKey) => void;
+  onStartPlacement?: () => void;
+  onStartDrawing?: () => void;
+  onClearPlot?: () => void;
+  isPlacing?: boolean;
+  isDrawing?: boolean;
+  plotRotation?: number;
+  onRotatePlot?: (deg: number) => void;
+  plotMarla?: number | null;
 }
 
 export default function MapControls({
@@ -38,6 +49,16 @@ export default function MapControls({
   neighborhoods,
   currentCityName,
   onSelectNeighborhood,
+  selectedPreset,
+  onSelectPreset,
+  onStartPlacement,
+  onStartDrawing,
+  onClearPlot,
+  isPlacing,
+  isDrawing,
+  plotRotation = 0,
+  onRotatePlot,
+  plotMarla,
 }: MapControlsProps) {
   const [showLocations, setShowLocations] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -232,6 +253,223 @@ export default function MapControls({
             <span>🏛️</span> Studio 3D
           </button>
         </div>
+      </div>
+
+      {/* Floating Quick Plot Selection Ribbon */}
+      <div
+        style={{
+          position: "absolute",
+          top: "66px",
+          left: "50%",
+          transform: "translateX(-50%)",
+          zIndex: 300,
+          display: "flex",
+          alignItems: "center",
+          gap: "6px",
+          background: "rgba(15, 23, 42, 0.92)",
+          backdropFilter: "blur(20px)",
+          border: "1px solid rgba(56, 189, 248, 0.3)",
+          borderRadius: "12px",
+          padding: "5px 10px",
+          boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
+          flexWrap: "wrap",
+          justifyContent: "center",
+          maxWidth: "calc(100vw - 450px)",
+        }}
+      >
+        <span
+          style={{
+            fontSize: "0.72rem",
+            fontWeight: 700,
+            textTransform: "uppercase",
+            letterSpacing: "0.06em",
+            color: "#38bdf8",
+            display: "flex",
+            alignItems: "center",
+            gap: "4px",
+            marginRight: "4px",
+          }}
+        >
+          <span>📐</span> Plot:
+        </span>
+
+        {/* 5 Marla Button */}
+        <button
+          onClick={() => onSelectPreset?.("5marla")}
+          style={{
+            background: selectedPreset === "5marla" ? "linear-gradient(135deg, #0284c7, #2563eb)" : "rgba(30, 41, 59, 0.7)",
+            color: selectedPreset === "5marla" ? "#ffffff" : "#cbd5e1",
+            border: `1px solid ${selectedPreset === "5marla" ? "#38bdf8" : "rgba(255, 255, 255, 0.08)"}`,
+            borderRadius: "7px",
+            padding: "5px 10px",
+            fontSize: "0.75rem",
+            fontWeight: 600,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: "4px",
+          }}
+          title="Select standard 5 Marla plot (25×45 ft ~ 105 m²)"
+        >
+          <span>5 Marla</span>
+          <span style={{ fontSize: "0.65rem", opacity: 0.75 }}>25×45&apos;</span>
+        </button>
+
+        {/* 10 Marla Button */}
+        <button
+          onClick={() => onSelectPreset?.("10marla")}
+          style={{
+            background: selectedPreset === "10marla" ? "linear-gradient(135deg, #0284c7, #2563eb)" : "rgba(30, 41, 59, 0.7)",
+            color: selectedPreset === "10marla" ? "#ffffff" : "#cbd5e1",
+            border: `1px solid ${selectedPreset === "10marla" ? "#38bdf8" : "rgba(255, 255, 255, 0.08)"}`,
+            borderRadius: "7px",
+            padding: "5px 10px",
+            fontSize: "0.75rem",
+            fontWeight: 600,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: "4px",
+          }}
+          title="Select 10 Marla plot (35×65 ft ~ 211 m²)"
+        >
+          <span>10 Marla</span>
+          <span style={{ fontSize: "0.65rem", opacity: 0.75 }}>35×65&apos;</span>
+        </button>
+
+        {/* 1 Kanal Button */}
+        <button
+          onClick={() => onSelectPreset?.("1kanal")}
+          style={{
+            background: selectedPreset === "1kanal" ? "linear-gradient(135deg, #0284c7, #2563eb)" : "rgba(30, 41, 59, 0.7)",
+            color: selectedPreset === "1kanal" ? "#ffffff" : "#cbd5e1",
+            border: `1px solid ${selectedPreset === "1kanal" ? "#38bdf8" : "rgba(255, 255, 255, 0.08)"}`,
+            borderRadius: "7px",
+            padding: "5px 10px",
+            fontSize: "0.75rem",
+            fontWeight: 600,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: "4px",
+          }}
+          title="Select 1 Kanal luxury plot (50×90 ft ~ 418 m²)"
+        >
+          <span>1 Kanal</span>
+          <span style={{ fontSize: "0.65rem", opacity: 0.75 }}>50×90&apos;</span>
+        </button>
+
+        {/* 2 Kanal Button */}
+        <button
+          onClick={() => onSelectPreset?.("2kanal")}
+          style={{
+            background: selectedPreset === "2kanal" ? "linear-gradient(135deg, #0284c7, #2563eb)" : "rgba(30, 41, 59, 0.7)",
+            color: selectedPreset === "2kanal" ? "#ffffff" : "#cbd5e1",
+            border: `1px solid ${selectedPreset === "2kanal" ? "#38bdf8" : "rgba(255, 255, 255, 0.08)"}`,
+            borderRadius: "7px",
+            padding: "5px 10px",
+            fontSize: "0.75rem",
+            fontWeight: 600,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: "4px",
+          }}
+          title="Select 2 Kanal estate plot (75×120 ft ~ 836 m²)"
+        >
+          <span>2 Kanal</span>
+          <span style={{ fontSize: "0.65rem", opacity: 0.75 }}>75×120&apos;</span>
+        </button>
+
+        <div style={{ width: "1px", height: "20px", background: "rgba(255, 255, 255, 0.15)", margin: "0 2px" }} />
+
+        {/* Click to Place Button */}
+        <button
+          onClick={onStartPlacement}
+          style={{
+            background: isPlacing ? "#0284c7" : "rgba(30, 41, 59, 0.8)",
+            color: isPlacing ? "#ffffff" : "#f1f5f9",
+            border: `1px solid ${isPlacing ? "#38bdf8" : "rgba(255, 255, 255, 0.12)"}`,
+            borderRadius: "7px",
+            padding: "5px 10px",
+            fontSize: "0.75rem",
+            fontWeight: 600,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: "4px",
+          }}
+          title="Click anywhere on the map to position your plot"
+        >
+          <span>📍</span>
+          <span>{isPlacing ? "Click Map to Drop" : "Place on Map"}</span>
+        </button>
+
+        {/* Draw Custom Button */}
+        <button
+          onClick={onStartDrawing}
+          style={{
+            background: isDrawing ? "#f59e0b" : "rgba(30, 41, 59, 0.8)",
+            color: isDrawing ? "#000000" : "#f1f5f9",
+            border: `1px solid ${isDrawing ? "#fbbf24" : "rgba(255, 255, 255, 0.12)"}`,
+            borderRadius: "7px",
+            padding: "5px 10px",
+            fontSize: "0.75rem",
+            fontWeight: 600,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: "4px",
+          }}
+          title="Click points on map to draw irregular plot boundary"
+        >
+          <span>✏️</span>
+          <span>{isDrawing ? "Drawing..." : "Draw Custom"}</span>
+        </button>
+
+        {hasPlot && (
+          <>
+            {/* Rotate Plot Button */}
+            <button
+              onClick={() => onRotatePlot?.(((plotRotation || 0) + 15) % 360)}
+              style={{
+                background: "rgba(30, 41, 59, 0.8)",
+                color: "#38bdf8",
+                border: "1px solid rgba(56, 189, 248, 0.3)",
+                borderRadius: "7px",
+                padding: "5px 8px",
+                fontSize: "0.75rem",
+                fontWeight: 600,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: "3px",
+              }}
+              title="Rotate plot street orientation by 15°"
+            >
+              <span>🔄</span>
+              <span>{Math.round(plotRotation || 0)}°</span>
+            </button>
+
+            {/* Clear Plot Button */}
+            <button
+              onClick={onClearPlot}
+              style={{
+                background: "rgba(239, 68, 68, 0.2)",
+                color: "#f87171",
+                border: "1px solid rgba(239, 68, 68, 0.4)",
+                borderRadius: "7px",
+                padding: "5px 8px",
+                fontSize: "0.75rem",
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+              title="Clear active plot"
+            >
+              ✕
+            </button>
+          </>
+        )}
       </div>
 
       {/* Right Side Navigation Dock (GIS Camera Controls) */}

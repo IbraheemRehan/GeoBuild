@@ -217,6 +217,13 @@ export default function HomePage() {
     [plotCenter, plotRotation, cameraMode]
   );
 
+  // Auto-initialize 5 Marla plot once globe is ready if no plot exists yet
+  useEffect(() => {
+    if (globeReady && !currentPlot) {
+      handleSelectPreset("5marla");
+    }
+  }, [globeReady, currentPlot, handleSelectPreset]);
+
   // Rotate plot
   const handleRotatePlot = useCallback(
     (deg: number) => {
@@ -532,31 +539,120 @@ export default function HomePage() {
         {/* Tab 1: AI Chat & Design */}
         {activeSidebarTab === "chat" && (
           <div className="sidebar-tab-content">
-            <div className="chat-active-plot-badge">
-              <span>
-                📍 <strong>Plot:</strong>{" "}
-                {selectedPreset
-                  ? selectedPreset === "custom"
-                    ? `Custom Plot (${plotMarla || 5} Marla)`
-                    : PRESET_LABELS[selectedPreset]
-                  : "5 Marla (Default)"}{" "}
-                • {CITIES[selectedCity].label}
-              </span>
-              <button
-                onClick={() => setActiveSidebarTab("plot")}
-                style={{
-                  background: "rgba(56, 189, 248, 0.15)",
-                  border: "1px solid rgba(56, 189, 248, 0.3)",
-                  color: "#38bdf8",
-                  borderRadius: "6px",
-                  padding: "2px 8px",
-                  fontSize: "0.72rem",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                }}
-              >
-                Change 📐
-              </button>
+            <div
+              style={{
+                background: "rgba(15, 23, 42, 0.75)",
+                borderBottom: "1px solid rgba(255, 255, 255, 0.08)",
+                padding: "8px 14px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "6px",
+                flexShrink: 0,
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: "0.74rem", fontWeight: 700, color: "#38bdf8", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  📐 Select Plot Size
+                </span>
+                <span style={{ fontSize: "0.72rem", color: "#94a3b8" }}>
+                  {selectedPreset ? (selectedPreset === "custom" ? `Custom (${plotMarla || 5} Marla)` : PRESET_LABELS[selectedPreset]) : "5 Marla"} • {CITIES[selectedCity].label}
+                </span>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "4px" }}>
+                {(["5marla", "10marla", "1kanal", "2kanal"] as PlotPresetKey[]).map((pk) => {
+                  const active = selectedPreset === pk;
+                  const labelMap: Record<PlotPresetKey, { title: string; dim: string }> = {
+                    "5marla": { title: "5 Marla", dim: "25×45'" },
+                    "10marla": { title: "10 Marla", dim: "35×65'" },
+                    "1kanal": { title: "1 Kanal", dim: "50×90'" },
+                    "2kanal": { title: "2 Kanal", dim: "75×120'" },
+                  };
+                  return (
+                    <button
+                      key={pk}
+                      onClick={() => handleSelectPreset(pk)}
+                      style={{
+                        background: active ? "linear-gradient(135deg, #0284c7, #2563eb)" : "rgba(30, 41, 59, 0.6)",
+                        border: `1px solid ${active ? "#38bdf8" : "rgba(255, 255, 255, 0.08)"}`,
+                        borderRadius: "6px",
+                        padding: "4px 2px",
+                        color: active ? "#ffffff" : "#cbd5e1",
+                        fontSize: "0.7rem",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                      }}
+                    >
+                      <span>{labelMap[pk].title}</span>
+                      <span style={{ fontSize: "0.62rem", opacity: 0.75 }}>{labelMap[pk].dim}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div style={{ display: "flex", gap: "6px", marginTop: "2px" }}>
+                <button
+                  onClick={handleStartPlacement}
+                  style={{
+                    flex: 1,
+                    background: isPlacing ? "#0284c7" : "rgba(30, 41, 59, 0.7)",
+                    color: isPlacing ? "#ffffff" : "#cbd5e1",
+                    border: `1px solid ${isPlacing ? "#38bdf8" : "rgba(255, 255, 255, 0.1)"}`,
+                    borderRadius: "6px",
+                    padding: "4px 8px",
+                    fontSize: "0.7rem",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "4px",
+                  }}
+                  title="Click anywhere on the map to drop the selected plot"
+                >
+                  <span>📍</span> {isPlacing ? "Click map..." : "Place on Map"}
+                </button>
+                <button
+                  onClick={() => globeRef.current?.startDrawingPlot()}
+                  style={{
+                    flex: 1,
+                    background: isDrawing ? "#f59e0b" : "rgba(30, 41, 59, 0.7)",
+                    color: isDrawing ? "#000000" : "#cbd5e1",
+                    border: `1px solid ${isDrawing ? "#fbbf24" : "rgba(255, 255, 255, 0.1)"}`,
+                    borderRadius: "6px",
+                    padding: "4px 8px",
+                    fontSize: "0.7rem",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "4px",
+                  }}
+                  title="Draw custom polygon boundary points"
+                >
+                  <span>✏️</span> {isDrawing ? "Drawing..." : "Draw Custom"}
+                </button>
+                {currentPlot && (
+                  <button
+                    onClick={() => handleRotatePlot((plotRotation + 15) % 360)}
+                    style={{
+                      background: "rgba(30, 41, 59, 0.7)",
+                      color: "#38bdf8",
+                      border: "1px solid rgba(56, 189, 248, 0.25)",
+                      borderRadius: "6px",
+                      padding: "4px 8px",
+                      fontSize: "0.7rem",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                    title="Rotate plot street orientation by 15°"
+                  >
+                    🔄 {Math.round(plotRotation)}°
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="chat-panel">
@@ -745,7 +841,7 @@ export default function HomePage() {
           onDrawingChange={(drawing) => setIsDrawing(drawing)}
         />
 
-        {/* Floating GIS Map Controls HUD (Compass, Zoom, 2D/3D, Tilt, Rotate, Neighborhoods) */}
+        {/* Floating GIS Map Controls HUD (Compass, Zoom, 2D/3D, Tilt, Rotate, Neighborhoods, Plot Ribbon) */}
         {globeReady && (
           <MapControls
             globeRef={globeRef}
@@ -760,6 +856,16 @@ export default function HomePage() {
             neighborhoods={NEIGHBORHOODS[selectedCity] || []}
             currentCityName={CITIES[selectedCity].label}
             onSelectNeighborhood={handleSelectNeighborhood}
+            selectedPreset={selectedPreset}
+            onSelectPreset={handleSelectPreset}
+            onStartPlacement={handleStartPlacement}
+            onStartDrawing={() => globeRef.current?.startDrawingPlot()}
+            onClearPlot={handleClearPlot}
+            isPlacing={isPlacing}
+            isDrawing={isDrawing}
+            plotRotation={plotRotation}
+            onRotatePlot={handleRotatePlot}
+            plotMarla={plotMarla}
           />
         )}
 
