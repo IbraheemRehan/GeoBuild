@@ -6,6 +6,7 @@ import type { CesiumGlobeRef, MapStyleKey } from "@/components/CesiumGlobe";
 import PlotSelector, { type PlotPresetKey } from "@/components/PlotSelector";
 import BuildingAnalysisHUD from "@/components/BuildingAnalysisHUD";
 import MapControls, { type Neighborhood } from "@/components/MapControls";
+import TopNavBar from "@/components/TopNavBar";
 
 // Dynamic import — CesiumJS cannot run on the server
 const CesiumGlobe = dynamic(() => import("@/components/CesiumGlobe"), {
@@ -13,7 +14,7 @@ const CesiumGlobe = dynamic(() => import("@/components/CesiumGlobe"), {
   loading: () => (
     <div className="cesium-loading-overlay">
       <div className="cesium-loading-spinner" />
-      <p>Preparing 3D geospatial engine...</p>
+      <p>Launching 3D Geospatial Engine...</p>
     </div>
   ),
 });
@@ -59,19 +60,13 @@ const PRESET_LABELS: Record<PlotPresetKey, string> = {
   "2kanal": "2 Kanal (75×120 ft)",
 };
 
-// Suggestion prompts
-const SUGGESTIONS = [
-  "Design a modern 2-storey house with 4 bedrooms, rooftop terrace, and contemporary Pakistani facade",
-  "5 marla ka ghar, 2 manzil, 3 kamre, covered parking",
-  "Luxury 1 kanal villa with basement, 6 bedrooms, Mughal-inspired design",
-  "Simple 3-bedroom house with servant quarter and drawing room",
-];
-
 interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
   timestamp: Date;
+  spec?: any;
+  costTotal?: number;
 }
 
 // Preset plot dimensions in metres (Rule 7, 10)
@@ -100,8 +95,6 @@ function createOrientedPlotCoordinates(
   const cosR = Math.cos(rad);
   const sinR = Math.sin(rad);
 
-  // 4 corners relative to center in metres:
-  // 0: front-left, 1: front-right, 2: back-right, 3: back-left
   const localCorners = [
     [-halfW, -halfD],
     [+halfW, -halfD],
@@ -127,9 +120,9 @@ export default function HomePage() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [globeReady, setGlobeReady] = useState(false);
 
-  // Layout states: sidebar collapse & tab switcher
+  // Floating AI Architect drawer state & tab
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [activeSidebarTab, setActiveSidebarTab] = useState<"chat" | "plot">("chat");
+  const [activeTab, setActiveTab] = useState<"chat" | "zoning">("chat");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll chat when messages or status change
@@ -159,11 +152,14 @@ export default function HomePage() {
   const [isOrbiting, setIsOrbiting] = useState(false);
 
   // Handle City Change
-  const handleCityChange = useCallback((city: CityKey) => {
-    setSelectedCity(city);
-    const coords = CITIES[city];
-    setPlotCenter([coords.lng, coords.lat]);
-    globeRef.current?.flyTo(coords.lng, coords.lat, 3000);
+  const handleCityChange = useCallback((city: string) => {
+    const cKey = city as CityKey;
+    setSelectedCity(cKey);
+    const coords = CITIES[cKey];
+    if (coords) {
+      setPlotCenter([coords.lng, coords.lat]);
+      globeRef.current?.flyTo(coords.lng, coords.lat, 3000);
+    }
   }, []);
 
   // Pakistani Neighborhood quick selection
@@ -190,10 +186,13 @@ export default function HomePage() {
   }, []);
 
   // 2D / 3D camera mode toggle
-  const handleToggleCameraMode = useCallback((mode: "2d" | "3d") => {
-    setCameraMode(mode);
-    globeRef.current?.setCameraView(mode, plotCenter[0], plotCenter[1]);
-  }, [plotCenter]);
+  const handleToggleCameraMode = useCallback(
+    (mode: "2d" | "3d") => {
+      setCameraMode(mode);
+      globeRef.current?.setCameraView(mode, plotCenter[0], plotCenter[1]);
+    },
+    [plotCenter]
+  );
 
   // Preset plot selection
   const handleSelectPreset = useCallback(
@@ -224,7 +223,7 @@ export default function HomePage() {
     }
   }, [globeReady, currentPlot, handleSelectPreset]);
 
-  // Rotate plot
+  // Rotate plot orientation
   const handleRotatePlot = useCallback(
     (deg: number) => {
       setPlotRotation(deg);
@@ -268,7 +267,6 @@ export default function HomePage() {
     setCurrentPlot(coords);
     setSelectedPreset("custom");
 
-    // Approximate area in Marla (1 marla ≈ 25.2929 m²)
     const sumX = coords.reduce((acc, c) => acc + c[0], 0);
     const sumY = coords.reduce((acc, c) => acc + c[1], 0);
     const cLon = sumX / coords.length;
@@ -319,7 +317,7 @@ export default function HomePage() {
       };
       setMessages((prev) => [...prev, userMsg]);
       setIsProcessing(true);
-      setStatusMessage("Interpreting requirements with AI...");
+      setStatusMessage("Interpreting requirements with Gemini 2.5 Flash...");
 
       const aiUrl = process.env.NEXT_PUBLIC_AI_SERVICE_URL || "http://localhost:8000";
 
@@ -349,7 +347,6 @@ export default function HomePage() {
         // Step 2: Ensure Plot Polygon exists
         let activePlot = currentPlot;
         if (!activePlot || activePlot.length < 3) {
-          // Infer plot size from prompt or spec
           const pLower = prompt.toLowerCase();
           let presetKey: PlotPresetKey = "5marla";
           if (pLower.includes("10 marla") || pLower.includes("10marla") || spec.rooms?.bedrooms >= 5) {
@@ -370,7 +367,7 @@ export default function HomePage() {
           throw new Error("Unable to establish plot coordinates for 3D generation.");
         }
 
-        setStatusMessage("Building procedural 3D model (GLB)...");
+        setStatusMessage("Building procedural 3D model (GLB extrusion)...");
 
         // Step 3: Procedural 3D Geometry Generation (Rule 11, 12, 13, 14)
         const generateRes = await fetch(`${aiUrl}/api/v1/generate`, {
@@ -404,7 +401,7 @@ export default function HomePage() {
           );
         }
 
-        setStatusMessage("Checking regulations and feasibility...");
+        setStatusMessage("Verifying LDA/CDA compliance and cost rates...");
 
         // Step 5: Regulatory Compliance & Cost Feasibility (Rule 15, 16, 17)
         let analysisData: any = null;
@@ -433,11 +430,14 @@ export default function HomePage() {
         });
 
         // Step 6: Assistant Chat Message
+        const costTotal = analysisData?.cost_estimate?.total;
         const assistantMsg: ChatMessage = {
           id: crypto.randomUUID(),
           role: "assistant",
           content: formatFullResponse(spec, generateData, analysisData),
           timestamp: new Date(),
+          spec,
+          costTotal,
         };
         setMessages((prev) => [...prev, assistantMsg]);
 
@@ -464,7 +464,7 @@ export default function HomePage() {
         setStatusMessage(null);
       }
     },
-    [inputValue, selectedCity, currentPlot]
+    [inputValue, selectedCity, currentPlot, plotRotation, selectedPreset]
   );
 
   const handleKeyDown = useCallback(
@@ -487,352 +487,303 @@ export default function HomePage() {
 
   return (
     <div className="app-layout">
-      {/* Sidebar with Tabs & Collapsible View */}
-      <aside className={`sidebar ${isSidebarCollapsed ? "collapsed" : ""}`}>
-        <div className="sidebar-header">
-          <div className="sidebar-header-top">
+      {/* 1. Unified Top Navigation Command Bar */}
+      <TopNavBar
+        cities={CITIES}
+        selectedCity={selectedCity}
+        onSelectCity={handleCityChange}
+        neighborhoods={NEIGHBORHOODS[selectedCity] || []}
+        onSelectNeighborhood={handleSelectNeighborhood}
+        selectedPreset={selectedPreset}
+        onSelectPreset={handleSelectPreset}
+        isPlacing={isPlacing}
+        onStartPlacement={handleStartPlacement}
+        isDrawing={isDrawing}
+        onStartDrawing={() => globeRef.current?.startDrawingPlot()}
+        hasPlot={Boolean(currentPlot && currentPlot.length >= 3)}
+        plotRotation={plotRotation}
+        onRotatePlot={handleRotatePlot}
+        onClearPlot={handleClearPlot}
+        plotMarla={plotMarla}
+        mapStyle={mapStyle}
+        onSelectMapStyle={handleSelectMapStyle}
+        cameraMode={cameraMode}
+        onToggleCameraMode={handleToggleCameraMode}
+        isSidebarOpen={!isSidebarCollapsed}
+        onToggleSidebar={() => setIsSidebarCollapsed((prev) => !prev)}
+        hasBuilding={Boolean(latestAnalysis)}
+      />
+
+      {/* 2. Floating AI Architect Copilot Drawer (Left Side) */}
+      <aside className={`ai-copilot-drawer ${isSidebarCollapsed ? "collapsed" : ""}`}>
+        {/* Drawer Header */}
+        <div className="drawer-header">
+          <div className="drawer-header-info">
+            <div className="drawer-header-icon">🏛️</div>
             <div>
-              <h1>GeoBuild AI</h1>
-              <p className="subtitle">AI Geospatial Real Estate & Architecture</p>
-            </div>
-            <button
-              className="sidebar-collapse-btn"
-              onClick={() => setIsSidebarCollapsed(true)}
-              title="Collapse sidebar for full-screen map view"
-            >
-              ◀ Map Only
-            </button>
-          </div>
-
-          <div className="city-selector">
-            {(Object.entries(CITIES) as [CityKey, (typeof CITIES)[CityKey]][]).map(
-              ([key, city]) => (
-                <button
-                  key={key}
-                  className={`city-chip ${selectedCity === key ? "active" : ""}`}
-                  onClick={() => handleCityChange(key)}
-                >
-                  {city.label}
-                </button>
-              )
-            )}
-          </div>
-        </div>
-
-        {/* Tab Navigation */}
-        <div className="sidebar-tabs">
-          <button
-            className={`sidebar-tab-btn ${activeSidebarTab === "chat" ? "active" : ""}`}
-            onClick={() => setActiveSidebarTab("chat")}
-          >
-            <span>💬</span> AI Architect
-          </button>
-          <button
-            className={`sidebar-tab-btn ${activeSidebarTab === "plot" ? "active" : ""}`}
-            onClick={() => setActiveSidebarTab("plot")}
-          >
-            <span>📐</span> Plot & Site Plan
-            {currentPlot && <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#10b981", display: "inline-block" }} />}
-          </button>
-        </div>
-
-        {/* Tab 1: AI Chat & Design */}
-        {activeSidebarTab === "chat" && (
-          <div className="sidebar-tab-content">
-            <div
-              style={{
-                background: "rgba(15, 23, 42, 0.75)",
-                borderBottom: "1px solid rgba(255, 255, 255, 0.08)",
-                padding: "8px 14px",
-                display: "flex",
-                flexDirection: "column",
-                gap: "6px",
-                flexShrink: 0,
-              }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: "0.74rem", fontWeight: 700, color: "#38bdf8", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                  📐 Select Plot Size
-                </span>
-                <span style={{ fontSize: "0.72rem", color: "#94a3b8" }}>
-                  {selectedPreset ? (selectedPreset === "custom" ? `Custom (${plotMarla || 5} Marla)` : PRESET_LABELS[selectedPreset]) : "5 Marla"} • {CITIES[selectedCity].label}
-                </span>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "4px" }}>
-                {(["5marla", "10marla", "1kanal", "2kanal"] as PlotPresetKey[]).map((pk) => {
-                  const active = selectedPreset === pk;
-                  const labelMap: Record<PlotPresetKey, { title: string; dim: string }> = {
-                    "5marla": { title: "5 Marla", dim: "25×45'" },
-                    "10marla": { title: "10 Marla", dim: "35×65'" },
-                    "1kanal": { title: "1 Kanal", dim: "50×90'" },
-                    "2kanal": { title: "2 Kanal", dim: "75×120'" },
-                  };
-                  return (
-                    <button
-                      key={pk}
-                      onClick={() => handleSelectPreset(pk)}
-                      style={{
-                        background: active ? "linear-gradient(135deg, #0284c7, #2563eb)" : "rgba(30, 41, 59, 0.6)",
-                        border: `1px solid ${active ? "#38bdf8" : "rgba(255, 255, 255, 0.08)"}`,
-                        borderRadius: "6px",
-                        padding: "4px 2px",
-                        color: active ? "#ffffff" : "#cbd5e1",
-                        fontSize: "0.7rem",
-                        fontWeight: 600,
-                        cursor: "pointer",
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "center",
-                      }}
-                    >
-                      <span>{labelMap[pk].title}</span>
-                      <span style={{ fontSize: "0.62rem", opacity: 0.75 }}>{labelMap[pk].dim}</span>
-                    </button>
-                  );
-                })}
-              </div>
-              <div style={{ display: "flex", gap: "6px", marginTop: "2px" }}>
-                <button
-                  onClick={handleStartPlacement}
-                  style={{
-                    flex: 1,
-                    background: isPlacing ? "#0284c7" : "rgba(30, 41, 59, 0.7)",
-                    color: isPlacing ? "#ffffff" : "#cbd5e1",
-                    border: `1px solid ${isPlacing ? "#38bdf8" : "rgba(255, 255, 255, 0.1)"}`,
-                    borderRadius: "6px",
-                    padding: "4px 8px",
-                    fontSize: "0.7rem",
-                    fontWeight: 600,
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "4px",
-                  }}
-                  title="Click anywhere on the map to drop the selected plot"
-                >
-                  <span>📍</span> {isPlacing ? "Click map..." : "Place on Map"}
-                </button>
-                <button
-                  onClick={() => globeRef.current?.startDrawingPlot()}
-                  style={{
-                    flex: 1,
-                    background: isDrawing ? "#f59e0b" : "rgba(30, 41, 59, 0.7)",
-                    color: isDrawing ? "#000000" : "#cbd5e1",
-                    border: `1px solid ${isDrawing ? "#fbbf24" : "rgba(255, 255, 255, 0.1)"}`,
-                    borderRadius: "6px",
-                    padding: "4px 8px",
-                    fontSize: "0.7rem",
-                    fontWeight: 600,
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "4px",
-                  }}
-                  title="Draw custom polygon boundary points"
-                >
-                  <span>✏️</span> {isDrawing ? "Drawing..." : "Draw Custom"}
-                </button>
-                {currentPlot && (
-                  <button
-                    onClick={() => handleRotatePlot((plotRotation + 15) % 360)}
-                    style={{
-                      background: "rgba(30, 41, 59, 0.7)",
-                      color: "#38bdf8",
-                      border: "1px solid rgba(56, 189, 248, 0.25)",
-                      borderRadius: "6px",
-                      padding: "4px 8px",
-                      fontSize: "0.7rem",
-                      fontWeight: 600,
-                      cursor: "pointer",
-                    }}
-                    title="Rotate plot street orientation by 15°"
-                  >
-                    🔄 {Math.round(plotRotation)}°
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div className="chat-panel">
-              <div className="chat-messages">
-                {messages.length === 0 ? (
-                  <div className="welcome-screen">
-                    <div className="welcome-icon">🏗️</div>
-                    <h2 className="welcome-title">Design Your Property</h2>
-                    <p className="welcome-description">
-                      Describe your dream home in Urdu or English. The AI generates your 3D building, extrudes procedural floors, places it accurately in Pakistan, and computes LDA/CDA compliance & cost rates.
-                    </p>
-                    <div className="welcome-suggestions">
-                      {SUGGESTIONS.map((s, i) => (
-                        <button
-                          key={i}
-                          className="suggestion-btn"
-                          onClick={() => handleSend(s)}
-                        >
-                          &ldquo;{s}&rdquo;
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  messages.map((msg) => (
-                    <div
-                      key={msg.id}
-                      className={`chat-message ${msg.role}`}
-                      style={{ whiteSpace: "pre-line" }}
-                    >
-                      {msg.content}
-                    </div>
-                  ))
-                )}
-                <div ref={messagesEndRef} />
-              </div>
-
-              {/* Status indicator if working */}
-              {statusMessage && (
-                <div
-                  style={{
-                    padding: "6px 16px",
-                    fontSize: "0.75rem",
-                    color: "#818cf8",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "8px",
-                    background: "rgba(99, 102, 241, 0.12)",
-                    borderTop: "1px solid rgba(99, 102, 241, 0.2)",
-                  }}
-                >
-                  <div
-                    style={{
-                      width: "8px",
-                      height: "8px",
-                      borderRadius: "50%",
-                      background: "#818cf8",
-                      animation: "pulse 1s infinite",
-                    }}
-                  />
-                  {statusMessage}
-                </div>
-              )}
-
-              {/* Pinned Sticky Chat Input */}
-              <div className="chat-input-container">
-                <div className="prompt-chips-row">
-                  <button
-                    className="prompt-chip"
-                    onClick={() => setInputValue("5 marla ka ghar, 2 manzil, 3 kamre, contemporary pakistani facade")}
-                  >
-                    🏠 5 Marla 2-Storey
-                  </button>
-                  <button
-                    className="prompt-chip"
-                    onClick={() => setInputValue("10 marla luxury villa with 4 bedrooms, rooftop terrace & covered parking")}
-                  >
-                    🏰 10 Marla Villa
-                  </button>
-                  <button
-                    className="prompt-chip"
-                    onClick={() => setInputValue("Add rooftop terrace, traditional jali screens, and modern balcony")}
-                  >
-                    🌇 Terrace & Jali
-                  </button>
-                  <button
-                    className="prompt-chip"
-                    onClick={() => setInputValue("1 kanal modern house with drawing room and 2 car porch")}
-                  >
-                    🚗 1 Kanal Porch
-                  </button>
-                </div>
-
-                <div className="chat-input-wrapper">
-                  <textarea
-                    className="chat-input"
-                    placeholder="Describe your building... (e.g. '5 marla ka ghar, 2 manzil, 4 kamre')"
-                    value={inputValue}
-                    onChange={(e) => setInputValue(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    disabled={isProcessing}
-                    rows={2}
-                  />
-                  <button
-                    className="chat-send-btn"
-                    onClick={() => handleSend()}
-                    disabled={!inputValue.trim() || isProcessing}
-                    title="Generate 3D Building"
-                  >
-                    {isProcessing ? "⏳" : "→"}
-                  </button>
-                </div>
+              <div className="drawer-title">AI Architect Copilot</div>
+              <div className="drawer-subtitle">
+                <span className="ai-dot-pulse" />
+                <span>Gemini 2.5 Flash • Urdu / English</span>
               </div>
             </div>
           </div>
-        )}
 
-        {/* Tab 2: Plot & Site Plan */}
-        {activeSidebarTab === "plot" && (
-          <div className="sidebar-tab-content">
-            <div className="plot-tab-scroll">
-              <PlotSelector
-                selectedPreset={selectedPreset}
-                onSelectPreset={handleSelectPreset}
-                onStartDrawing={() => globeRef.current?.startDrawingPlot()}
-                onStartPlacement={handleStartPlacement}
-                onClearPlot={handleClearPlot}
-                isDrawing={isDrawing}
-                isPlacing={isPlacing}
-                hasPlot={Boolean(currentPlot && currentPlot.length >= 3)}
-                plotMarla={plotMarla}
-                mapStyle={mapStyle}
-                onSelectMapStyle={handleSelectMapStyle}
-                cameraMode={cameraMode}
-                onToggleCameraMode={handleToggleCameraMode}
-                plotRotation={plotRotation}
-                onRotatePlot={handleRotatePlot}
-              />
-
+          <div className="drawer-header-actions">
+            <div className="drawer-tab-switch">
               <button
-                onClick={() => setActiveSidebarTab("chat")}
-                style={{
-                  background: "linear-gradient(135deg, #4f46e5, #7c3aed)",
-                  border: "none",
-                  borderRadius: "10px",
-                  color: "white",
-                  padding: "12px 16px",
-                  fontWeight: 700,
-                  fontSize: "0.85rem",
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: "8px",
-                  boxShadow: "0 4px 16px rgba(79, 70, 229, 0.4)",
-                  marginTop: "6px",
-                }}
+                className={`drawer-tab-btn ${activeTab === "chat" ? "active" : ""}`}
+                onClick={() => setActiveTab("chat")}
               >
-                <span>Proceed to AI Building Design</span>
-                <span>💬 →</span>
+                💬 Chat
+              </button>
+              <button
+                className={`drawer-tab-btn ${activeTab === "zoning" ? "active" : ""}`}
+                onClick={() => setActiveTab("zoning")}
+              >
+                📐 Zoning
               </button>
             </div>
+
+            <button
+              className="drawer-collapse-btn"
+              onClick={() => setIsSidebarCollapsed(true)}
+              title="Collapse Copilot Panel"
+            >
+              ◀
+            </button>
+          </div>
+        </div>
+
+        {/* Tab 1: Architecture Chat & Suggestions */}
+        {activeTab === "chat" && (
+          <>
+            <div className="chat-stream-container">
+              {messages.length === 0 ? (
+                <div className="welcome-screen">
+                  <div className="welcome-icon">🏗️</div>
+                  <h2 className="welcome-title">AI Property Architect</h2>
+                  <p className="welcome-description">
+                    Describe your desired residential or commercial property in Urdu or English. The AI procedural pipeline extrudes 3D floors, aligns setbacks with LDA/CDA zoning, and computes accurate Pakistani construction rate tables.
+                  </p>
+
+                  <div className="welcome-suggestions">
+                    <button
+                      className="suggestion-btn"
+                      onClick={() => handleSend("Design a modern 2-storey house with 4 bedrooms, rooftop terrace, and contemporary Pakistani facade")}
+                    >
+                      🏠 <strong>5 Marla 2-Storey Modern</strong>
+                      <div style={{ fontSize: "0.72rem", opacity: 0.75, marginTop: "2px" }}>
+                        4 Beds, rooftop terrace, contemporary facade
+                      </div>
+                    </button>
+
+                    <button
+                      className="suggestion-btn"
+                      onClick={() => handleSend("10 marla luxury villa with 5 bedrooms, servant quarter, covered porch, and jali screens")}
+                    >
+                      🏰 <strong>10 Marla Luxury Villa</strong>
+                      <div style={{ fontSize: "0.72rem", opacity: 0.75, marginTop: "2px" }}>
+                        5 Beds, traditional jali screens, servant quarter
+                      </div>
+                    </button>
+
+                    <button
+                      className="suggestion-btn"
+                      onClick={() => handleSend("5 marla ka ghar, 2 manzil, 3 kamre, covered car porch, drawing room")}
+                    >
+                      🇵🇰 <strong>5 Marla Ka Ghar (اردو)</strong>
+                      <div style={{ fontSize: "0.72rem", opacity: 0.75, marginTop: "2px" }}>
+                        2 Manzil, 3 Kamre, Drawing Room, Porch
+                      </div>
+                    </button>
+
+                    <button
+                      className="suggestion-btn"
+                      onClick={() => handleSend("1 kanal modern house with basement, 6 bedrooms, swimming pool patio, and double height lobby")}
+                    >
+                      🏢 <strong>1 Kanal Executive Estate</strong>
+                      <div style={{ fontSize: "0.72rem", opacity: 0.75, marginTop: "2px" }}>
+                        Basement, 6 Bedrooms, double height lobby
+                      </div>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                messages.map((msg) => (
+                  <div key={msg.id} className={`chat-msg ${msg.role}`} style={{ whiteSpace: "pre-line" }}>
+                    {msg.content}
+                    {msg.role === "assistant" && (
+                      <div style={{ display: "flex", gap: "6px", marginTop: "10px" }}>
+                        <button
+                          onClick={() => globeRef.current?.flyToBuilding()}
+                          style={{
+                            background: "rgba(56, 189, 248, 0.2)",
+                            border: "1px solid rgba(56, 189, 248, 0.4)",
+                            color: "#38bdf8",
+                            borderRadius: "6px",
+                            padding: "4px 8px",
+                            fontSize: "0.72rem",
+                            fontWeight: 600,
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "4px",
+                          }}
+                        >
+                          🎥 Focus 3D Model
+                        </button>
+                        <button
+                          onClick={toggleOrbitMode}
+                          style={{
+                            background: isOrbiting ? "#10b981" : "rgba(30, 41, 59, 0.8)",
+                            border: "1px solid rgba(255, 255, 255, 0.1)",
+                            color: "white",
+                            borderRadius: "6px",
+                            padding: "4px 8px",
+                            fontSize: "0.72rem",
+                            fontWeight: 600,
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "4px",
+                          }}
+                        >
+                          🔄 {isOrbiting ? "Stop Orbit" : "360° Orbit"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
+              <div ref={messagesEndRef} />
+            </div>
+
+            {/* In-Flight Status Indicator */}
+            {statusMessage && (
+              <div className="chat-status-bar">
+                <div className="status-pulse-dot" />
+                <span>{statusMessage}</span>
+              </div>
+            )}
+
+            {/* Pinned Sticky Input Dock */}
+            <div className="drawer-input-dock">
+              <div className="prompt-pills-scroll">
+                <button
+                  className="prompt-pill-btn"
+                  onClick={() => setInputValue("5 marla ka ghar, 2 manzil, 3 kamre, contemporary pakistani facade")}
+                >
+                  🏠 5 Marla Modern
+                </button>
+                <button
+                  className="prompt-pill-btn"
+                  onClick={() => setInputValue("10 marla luxury villa with 4 bedrooms, rooftop terrace & covered parking")}
+                >
+                  🏰 10 Marla Villa
+                </button>
+                <button
+                  className="prompt-pill-btn"
+                  onClick={() => setInputValue("Add rooftop terrace, traditional jali screens, and modern balcony")}
+                >
+                  🌇 Terrace & Jali
+                </button>
+                <button
+                  className="prompt-pill-btn"
+                  onClick={() => setInputValue("1 kanal modern house with drawing room and 2 car porch")}
+                >
+                  🚗 1 Kanal Porch
+                </button>
+              </div>
+
+              <div className="chat-input-row">
+                <textarea
+                  className="chat-prompt-textarea"
+                  placeholder="Describe your building (e.g. '5 marla ka ghar, 2 manzil, 4 kamre, modern facade')..."
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  disabled={isProcessing}
+                  rows={2}
+                />
+                <button
+                  className="chat-send-action-btn"
+                  onClick={() => handleSend()}
+                  disabled={!inputValue.trim() || isProcessing}
+                  title="Generate 3D Architectural Building"
+                >
+                  {isProcessing ? "⏳" : "→"}
+                </button>
+              </div>
+              <div className="chat-input-helper">
+                Press Enter ↵ to generate • Shift+Enter for new line
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Tab 2: Detailed Plot & Regulatory Zoning */}
+        {activeTab === "zoning" && (
+          <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "16px" }}>
+            <PlotSelector
+              selectedPreset={selectedPreset}
+              onSelectPreset={handleSelectPreset}
+              onStartDrawing={() => globeRef.current?.startDrawingPlot()}
+              onStartPlacement={handleStartPlacement}
+              onClearPlot={handleClearPlot}
+              isDrawing={isDrawing}
+              isPlacing={isPlacing}
+              hasPlot={Boolean(currentPlot && currentPlot.length >= 3)}
+              plotMarla={plotMarla}
+              mapStyle={mapStyle}
+              onSelectMapStyle={handleSelectMapStyle}
+              cameraMode={cameraMode}
+              onToggleCameraMode={handleToggleCameraMode}
+              plotRotation={plotRotation}
+              onRotatePlot={handleRotatePlot}
+            />
+
+            <button
+              onClick={() => setActiveTab("chat")}
+              style={{
+                width: "100%",
+                background: "linear-gradient(135deg, #4f46e5, #7c3aed)",
+                border: "none",
+                borderRadius: "10px",
+                color: "white",
+                padding: "12px 16px",
+                fontWeight: 700,
+                fontSize: "0.85rem",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "8px",
+                boxShadow: "0 4px 16px rgba(79, 70, 229, 0.4)",
+                marginTop: "12px",
+              }}
+            >
+              <span>Back to AI Prompt & Generation</span>
+              <span>💬 →</span>
+            </button>
           </div>
         )}
       </aside>
 
-      {/* 3D Geospatial Globe */}
-      <main className="globe-container">
-        {/* Floating Re-Open Sidebar Button when Collapsed */}
-        {isSidebarCollapsed && (
-          <button
-            className="sidebar-toggle-floating"
-            onClick={() => setIsSidebarCollapsed(false)}
-            title="Open AI Architect Sidebar"
-          >
-            <span>💬</span>
-            <span>Open AI Architect</span>
-          </button>
-        )}
+      {/* Floating Re-Open Button when Copilot is Collapsed */}
+      {isSidebarCollapsed && (
+        <button
+          className="copilot-floating-expand-btn"
+          onClick={() => setIsSidebarCollapsed(false)}
+          title="Open AI Architect Copilot"
+        >
+          <span>💬</span>
+          <span>Open AI Architect</span>
+        </button>
+      )}
 
+      {/* 3. Full-Bleed 3D Geospatial Engine Viewport */}
+      <main className="globe-container">
         <CesiumGlobe
           ref={globeRef}
           ionToken={CESIUM_TOKEN}
@@ -841,35 +792,20 @@ export default function HomePage() {
           onDrawingChange={(drawing) => setIsDrawing(drawing)}
         />
 
-        {/* Floating GIS Map Controls HUD (Compass, Zoom, 2D/3D, Tilt, Rotate, Neighborhoods, Plot Ribbon) */}
+        {/* Minimalist Bottom-Right GIS Camera Dock */}
         {globeReady && (
           <MapControls
             globeRef={globeRef}
             cameraMode={cameraMode}
             onToggleCameraMode={handleToggleCameraMode}
-            mapStyle={mapStyle}
-            onSelectMapStyle={handleSelectMapStyle}
             isOrbiting={isOrbiting}
             onToggleOrbit={toggleOrbitMode}
             hasBuilding={Boolean(latestAnalysis)}
             hasPlot={Boolean(currentPlot && currentPlot.length >= 3)}
-            neighborhoods={NEIGHBORHOODS[selectedCity] || []}
-            currentCityName={CITIES[selectedCity].label}
-            onSelectNeighborhood={handleSelectNeighborhood}
-            selectedPreset={selectedPreset}
-            onSelectPreset={handleSelectPreset}
-            onStartPlacement={handleStartPlacement}
-            onStartDrawing={() => globeRef.current?.startDrawingPlot()}
-            onClearPlot={handleClearPlot}
-            isPlacing={isPlacing}
-            isDrawing={isDrawing}
-            plotRotation={plotRotation}
-            onRotatePlot={handleRotatePlot}
-            plotMarla={plotMarla}
           />
         )}
 
-        {/* Floating Building & Feasibility HUD */}
+        {/* Floating Building Feasibility & Compliance HUD */}
         {latestAnalysis && (
           <BuildingAnalysisHUD
             spec={latestAnalysis.spec}
@@ -925,4 +861,3 @@ function formatFullResponse(spec: any, generate: any, analysis: any): string {
 
   return lines.join("\n");
 }
-

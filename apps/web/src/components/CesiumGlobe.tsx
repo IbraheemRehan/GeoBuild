@@ -852,6 +852,32 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
           viewer = new Cesium.Viewer(containerRef.current, viewerOptions);
           viewerRef.current = viewer;
 
+          // Force immediate resize to fill container bounds
+          try {
+            viewer.resize();
+          } catch {}
+
+          // ResizeObserver ensures canvas always matches 100% of container when layout reflows
+          const resizeObserver = new ResizeObserver(() => {
+            if (viewerRef.current && !viewerRef.current.isDestroyed()) {
+              try {
+                viewerRef.current.resize();
+              } catch {}
+            }
+          });
+          if (containerRef.current) {
+            resizeObserver.observe(containerRef.current);
+          }
+
+          const handleWindowResize = () => {
+            if (viewerRef.current && !viewerRef.current.isDestroyed()) {
+              try {
+                viewerRef.current.resize();
+              } catch {}
+            }
+          };
+          window.addEventListener("resize", handleWindowResize);
+
           // Razor-sharp clarity settings for high-DPI displays & satellite zoom
           viewer.resolutionScale = Math.min(window.devicePixelRatio || 1.0, 2.0);
           viewer.scene.globe.maximumScreenSpaceError = 1.33; // Load higher detail tiles earlier
@@ -884,6 +910,15 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
 
           setIsLoading(false);
           onReady?.(viewer);
+
+          // Also trigger resize shortly after ready to catch any final layout transitions
+          setTimeout(() => {
+            if (viewerRef.current && !viewerRef.current.isDestroyed()) {
+              try {
+                viewerRef.current.resize();
+              } catch {}
+            }
+          }, 200);
         } catch (err) {
           console.error("Failed to initialize Cesium:", err);
           setError(err instanceof Error ? err.message : "Failed to load 3D globe");
@@ -897,6 +932,7 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
         stopDrawing();
         stopPlacing();
         clearModelInternal();
+        window.removeEventListener("resize", () => {});
         if (viewer && !viewer.isDestroyed()) {
           viewer.destroy();
         }
