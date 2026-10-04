@@ -21,6 +21,11 @@ export interface CesiumGlobeRef {
   viewer: CesiumViewer | null;
   flyTo: (lng: number, lat: number, height?: number) => void;
   flyToBuilding: () => void;
+  zoomIn: () => void;
+  zoomOut: () => void;
+  tiltCamera: (degrees: number) => void;
+  rotateCamera: (degrees: number) => void;
+  resetNorth: () => void;
   setCameraView: (mode: "2d" | "3d", targetLng?: number, targetLat?: number) => void;
   setMapStyle: (style: MapStyleKey) => void;
   setPlotPolygon: (coords: [number, number][], label?: string) => void;
@@ -504,6 +509,54 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
             duration: 1.5,
           });
         }
+      },
+      zoomIn: () => {
+        const viewer = viewerRef.current;
+        if (!viewer) return;
+        const carto = viewer.camera.positionCartographic;
+        const currentHeight = carto ? carto.height : 500;
+        const zoomDelta = Math.max(currentHeight * 0.35, 15);
+        viewer.camera.zoomIn(zoomDelta);
+      },
+      zoomOut: () => {
+        const viewer = viewerRef.current;
+        if (!viewer) return;
+        const carto = viewer.camera.positionCartographic;
+        const currentHeight = carto ? carto.height : 500;
+        const zoomDelta = Math.max(currentHeight * 0.35, 15);
+        viewer.camera.zoomOut(zoomDelta);
+      },
+      tiltCamera: (degrees: number) => {
+        const viewer = viewerRef.current;
+        const Cesium = (window as any).Cesium;
+        if (!viewer || !Cesium) return;
+        if (degrees > 0) {
+          viewer.camera.lookUp(Cesium.Math.toRadians(degrees));
+        } else {
+          viewer.camera.lookDown(Cesium.Math.toRadians(-degrees));
+        }
+      },
+      rotateCamera: (degrees: number) => {
+        const viewer = viewerRef.current;
+        const Cesium = (window as any).Cesium;
+        if (!viewer || !Cesium) return;
+        viewer.camera.rotateRight(Cesium.Math.toRadians(degrees));
+      },
+      resetNorth: () => {
+        const viewer = viewerRef.current;
+        const Cesium = (window as any).Cesium;
+        if (!viewer || !Cesium) return;
+        const carto = viewer.camera.positionCartographic;
+        if (!carto) return;
+        viewer.camera.flyTo({
+          destination: Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, carto.height),
+          orientation: {
+            heading: 0,
+            pitch: viewer.camera.pitch,
+            roll: 0,
+          },
+          duration: 0.8,
+        });
       },
       setCameraView: (mode: "2d" | "3d", targetLng?: number, targetLat?: number) => {
         const viewer = viewerRef.current;

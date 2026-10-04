@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import dynamic from "next/dynamic";
 import type { CesiumGlobeRef, MapStyleKey } from "@/components/CesiumGlobe";
 import PlotSelector, { type PlotPresetKey } from "@/components/PlotSelector";
 import BuildingAnalysisHUD from "@/components/BuildingAnalysisHUD";
+import MapControls, { type Neighborhood } from "@/components/MapControls";
 
 // Dynamic import — CesiumJS cannot run on the server
 const CesiumGlobe = dynamic(() => import("@/components/CesiumGlobe"), {
@@ -27,6 +28,36 @@ const CITIES = {
 } as const;
 
 type CityKey = keyof typeof CITIES;
+
+// Pakistani Neighborhood Quick Jumps
+const NEIGHBORHOODS: Record<CityKey, Neighborhood[]> = {
+  lahore: [
+    { name: "DHA Phase 6", lng: 74.4503, lat: 31.4728, height: 350 },
+    { name: "Bahria Town Sector C", lng: 74.195, lat: 31.3695, height: 350 },
+    { name: "Gulberg III", lng: 74.3496, lat: 31.5135, height: 350 },
+    { name: "Johar Town Phase 2", lng: 74.2785, lat: 31.4697, height: 350 },
+    { name: "Model Town", lng: 74.3218, lat: 31.4878, height: 350 },
+  ],
+  islamabad: [
+    { name: "F-7 / Blue Area", lng: 73.0551, lat: 33.72, height: 350 },
+    { name: "DHA Phase 2 Islamabad", lng: 73.155, lat: 33.528, height: 350 },
+    { name: "Bahria Enclave", lng: 73.205, lat: 33.685, height: 350 },
+    { name: "Sector G-11", lng: 72.998, lat: 33.668, height: 350 },
+  ],
+  karachi: [
+    { name: "Clifton Block 4", lng: 67.032, lat: 24.819, height: 350 },
+    { name: "DHA Phase 8", lng: 67.085, lat: 24.77, height: 350 },
+    { name: "Bahria Town Karachi", lng: 67.33, lat: 25.01, height: 450 },
+    { name: "Gulshan-e-Iqbal", lng: 67.088, lat: 24.918, height: 350 },
+  ],
+};
+
+const PRESET_LABELS: Record<PlotPresetKey, string> = {
+  "5marla": "5 Marla (25×45 ft)",
+  "10marla": "10 Marla (35×65 ft)",
+  "1kanal": "1 Kanal (50×90 ft)",
+  "2kanal": "2 Kanal (75×120 ft)",
+};
 
 // Suggestion prompts
 const SUGGESTIONS = [
@@ -96,6 +127,16 @@ export default function HomePage() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [globeReady, setGlobeReady] = useState(false);
 
+  // Layout states: sidebar collapse & tab switcher
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [activeSidebarTab, setActiveSidebarTab] = useState<"chat" | "plot">("chat");
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll chat when messages or status change
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isProcessing, statusMessage]);
+
   // Map & Camera mode state
   const [mapStyle, setMapStyle] = useState<MapStyleKey>("google_satellite");
   const [cameraMode, setCameraMode] = useState<"2d" | "3d">("3d");
@@ -124,6 +165,23 @@ export default function HomePage() {
     setPlotCenter([coords.lng, coords.lat]);
     globeRef.current?.flyTo(coords.lng, coords.lat, 3000);
   }, []);
+
+  // Pakistani Neighborhood quick selection
+  const handleSelectNeighborhood = useCallback(
+    (n: Neighborhood) => {
+      setPlotCenter([n.lng, n.lat]);
+      globeRef.current?.flyTo(n.lng, n.lat, n.height);
+      if (selectedPreset && selectedPreset !== "custom") {
+        const coords = createOrientedPlotCoordinates(n.lng, n.lat, selectedPreset, plotRotation);
+        setCurrentPlot(coords);
+        globeRef.current?.setPlotPolygon(
+          coords,
+          `${PRESET_LABELS[selectedPreset]} • ${n.name}`
+        );
+      }
+    },
+    [selectedPreset, plotRotation]
+  );
 
   // Map style toggle
   const handleSelectMapStyle = useCallback((style: MapStyleKey) => {
@@ -422,11 +480,23 @@ export default function HomePage() {
 
   return (
     <div className="app-layout">
-      {/* Sidebar */}
-      <aside className="sidebar">
+      {/* Sidebar with Tabs & Collapsible View */}
+      <aside className={`sidebar ${isSidebarCollapsed ? "collapsed" : ""}`}>
         <div className="sidebar-header">
-          <h1>GeoBuild AI</h1>
-          <p className="subtitle">AI-Powered 3D Development Platform</p>
+          <div className="sidebar-header-top">
+            <div>
+              <h1>GeoBuild AI</h1>
+              <p className="subtitle">AI Geospatial Real Estate & Architecture</p>
+            </div>
+            <button
+              className="sidebar-collapse-btn"
+              onClick={() => setIsSidebarCollapsed(true)}
+              title="Collapse sidebar for full-screen map view"
+            >
+              ◀ Map Only
+            </button>
+          </div>
+
           <div className="city-selector">
             {(Object.entries(CITIES) as [CityKey, (typeof CITIES)[CityKey]][]).map(
               ([key, city]) => (
@@ -442,117 +512,231 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Plot Selector Widget */}
-        <div style={{ padding: "0 16px 12px 16px" }}>
-          <PlotSelector
-            selectedPreset={selectedPreset}
-            onSelectPreset={handleSelectPreset}
-            onStartDrawing={() => globeRef.current?.startDrawingPlot()}
-            onStartPlacement={handleStartPlacement}
-            onClearPlot={handleClearPlot}
-            isDrawing={isDrawing}
-            isPlacing={isPlacing}
-            hasPlot={Boolean(currentPlot && currentPlot.length >= 3)}
-            plotMarla={plotMarla}
-            mapStyle={mapStyle}
-            onSelectMapStyle={handleSelectMapStyle}
-            cameraMode={cameraMode}
-            onToggleCameraMode={handleToggleCameraMode}
-            plotRotation={plotRotation}
-            onRotatePlot={handleRotatePlot}
-          />
+        {/* Tab Navigation */}
+        <div className="sidebar-tabs">
+          <button
+            className={`sidebar-tab-btn ${activeSidebarTab === "chat" ? "active" : ""}`}
+            onClick={() => setActiveSidebarTab("chat")}
+          >
+            <span>💬</span> AI Architect
+          </button>
+          <button
+            className={`sidebar-tab-btn ${activeSidebarTab === "plot" ? "active" : ""}`}
+            onClick={() => setActiveSidebarTab("plot")}
+          >
+            <span>📐</span> Plot & Site Plan
+            {currentPlot && <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#10b981", display: "inline-block" }} />}
+          </button>
         </div>
 
-        <div className="sidebar-content">
-          <div className="chat-panel">
-            <div className="chat-messages">
-              {messages.length === 0 ? (
-                <div className="welcome-screen">
-                  <div className="welcome-icon">🏗️</div>
-                  <h2 className="welcome-title">Design Your Building</h2>
-                  <p className="welcome-description">
-                    Select a plot preset above or describe your dream building.
-                    The platform generates the exact 3D building, places it on the map,
-                    and validates building regulations.
-                  </p>
-                  <div className="welcome-suggestions">
-                    {SUGGESTIONS.map((s, i) => (
-                      <button
-                        key={i}
-                        className="suggestion-btn"
-                        onClick={() => handleSend(s)}
-                      >
-                        &ldquo;{s}&rdquo;
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                messages.map((msg) => (
-                  <div
-                    key={msg.id}
-                    className={`chat-message ${msg.role}`}
-                    style={{ whiteSpace: "pre-line" }}
-                  >
-                    {msg.content}
-                  </div>
-                ))
-              )}
-            </div>
-
-            {/* Status indicator if working */}
-            {statusMessage && (
-              <div
+        {/* Tab 1: AI Chat & Design */}
+        {activeSidebarTab === "chat" && (
+          <div className="sidebar-tab-content">
+            <div className="chat-active-plot-badge">
+              <span>
+                📍 <strong>Plot:</strong>{" "}
+                {selectedPreset
+                  ? selectedPreset === "custom"
+                    ? `Custom Plot (${plotMarla || 5} Marla)`
+                    : PRESET_LABELS[selectedPreset]
+                  : "5 Marla (Default)"}{" "}
+                • {CITIES[selectedCity].label}
+              </span>
+              <button
+                onClick={() => setActiveSidebarTab("plot")}
                 style={{
-                  padding: "6px 16px",
-                  fontSize: "0.75rem",
-                  color: "#818cf8",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                  background: "rgba(99, 102, 241, 0.1)",
+                  background: "rgba(56, 189, 248, 0.15)",
+                  border: "1px solid rgba(56, 189, 248, 0.3)",
+                  color: "#38bdf8",
+                  borderRadius: "6px",
+                  padding: "2px 8px",
+                  fontSize: "0.72rem",
+                  fontWeight: 600,
+                  cursor: "pointer",
                 }}
               >
+                Change 📐
+              </button>
+            </div>
+
+            <div className="chat-panel">
+              <div className="chat-messages">
+                {messages.length === 0 ? (
+                  <div className="welcome-screen">
+                    <div className="welcome-icon">🏗️</div>
+                    <h2 className="welcome-title">Design Your Property</h2>
+                    <p className="welcome-description">
+                      Describe your dream home in Urdu or English. The AI generates your 3D building, extrudes procedural floors, places it accurately in Pakistan, and computes LDA/CDA compliance & cost rates.
+                    </p>
+                    <div className="welcome-suggestions">
+                      {SUGGESTIONS.map((s, i) => (
+                        <button
+                          key={i}
+                          className="suggestion-btn"
+                          onClick={() => handleSend(s)}
+                        >
+                          &ldquo;{s}&rdquo;
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  messages.map((msg) => (
+                    <div
+                      key={msg.id}
+                      className={`chat-message ${msg.role}`}
+                      style={{ whiteSpace: "pre-line" }}
+                    >
+                      {msg.content}
+                    </div>
+                  ))
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+
+              {/* Status indicator if working */}
+              {statusMessage && (
                 <div
                   style={{
-                    width: "8px",
-                    height: "8px",
-                    borderRadius: "50%",
-                    background: "#818cf8",
-                    animation: "pulse 1s infinite",
+                    padding: "6px 16px",
+                    fontSize: "0.75rem",
+                    color: "#818cf8",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    background: "rgba(99, 102, 241, 0.12)",
+                    borderTop: "1px solid rgba(99, 102, 241, 0.2)",
                   }}
-                />
-                {statusMessage}
-              </div>
-            )}
-
-            <div className="chat-input-container">
-              <div className="chat-input-wrapper">
-                <textarea
-                  className="chat-input"
-                  placeholder="Describe your building... (e.g. '5 marla ka ghar, 2 manzil, 4 kamre')"
-                  value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  disabled={isProcessing}
-                  rows={1}
-                />
-                <button
-                  className="chat-send-btn"
-                  onClick={() => handleSend()}
-                  disabled={!inputValue.trim() || isProcessing}
-                  title="Send"
                 >
-                  {isProcessing ? "⏳" : "→"}
-                </button>
+                  <div
+                    style={{
+                      width: "8px",
+                      height: "8px",
+                      borderRadius: "50%",
+                      background: "#818cf8",
+                      animation: "pulse 1s infinite",
+                    }}
+                  />
+                  {statusMessage}
+                </div>
+              )}
+
+              {/* Pinned Sticky Chat Input */}
+              <div className="chat-input-container">
+                <div className="prompt-chips-row">
+                  <button
+                    className="prompt-chip"
+                    onClick={() => setInputValue("5 marla ka ghar, 2 manzil, 3 kamre, contemporary pakistani facade")}
+                  >
+                    🏠 5 Marla 2-Storey
+                  </button>
+                  <button
+                    className="prompt-chip"
+                    onClick={() => setInputValue("10 marla luxury villa with 4 bedrooms, rooftop terrace & covered parking")}
+                  >
+                    🏰 10 Marla Villa
+                  </button>
+                  <button
+                    className="prompt-chip"
+                    onClick={() => setInputValue("Add rooftop terrace, traditional jali screens, and modern balcony")}
+                  >
+                    🌇 Terrace & Jali
+                  </button>
+                  <button
+                    className="prompt-chip"
+                    onClick={() => setInputValue("1 kanal modern house with drawing room and 2 car porch")}
+                  >
+                    🚗 1 Kanal Porch
+                  </button>
+                </div>
+
+                <div className="chat-input-wrapper">
+                  <textarea
+                    className="chat-input"
+                    placeholder="Describe your building... (e.g. '5 marla ka ghar, 2 manzil, 4 kamre')"
+                    value={inputValue}
+                    onChange={(e) => setInputValue(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    disabled={isProcessing}
+                    rows={2}
+                  />
+                  <button
+                    className="chat-send-btn"
+                    onClick={() => handleSend()}
+                    disabled={!inputValue.trim() || isProcessing}
+                    title="Generate 3D Building"
+                  >
+                    {isProcessing ? "⏳" : "→"}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
+
+        {/* Tab 2: Plot & Site Plan */}
+        {activeSidebarTab === "plot" && (
+          <div className="sidebar-tab-content">
+            <div className="plot-tab-scroll">
+              <PlotSelector
+                selectedPreset={selectedPreset}
+                onSelectPreset={handleSelectPreset}
+                onStartDrawing={() => globeRef.current?.startDrawingPlot()}
+                onStartPlacement={handleStartPlacement}
+                onClearPlot={handleClearPlot}
+                isDrawing={isDrawing}
+                isPlacing={isPlacing}
+                hasPlot={Boolean(currentPlot && currentPlot.length >= 3)}
+                plotMarla={plotMarla}
+                mapStyle={mapStyle}
+                onSelectMapStyle={handleSelectMapStyle}
+                cameraMode={cameraMode}
+                onToggleCameraMode={handleToggleCameraMode}
+                plotRotation={plotRotation}
+                onRotatePlot={handleRotatePlot}
+              />
+
+              <button
+                onClick={() => setActiveSidebarTab("chat")}
+                style={{
+                  background: "linear-gradient(135deg, #4f46e5, #7c3aed)",
+                  border: "none",
+                  borderRadius: "10px",
+                  color: "white",
+                  padding: "12px 16px",
+                  fontWeight: 700,
+                  fontSize: "0.85rem",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "8px",
+                  boxShadow: "0 4px 16px rgba(79, 70, 229, 0.4)",
+                  marginTop: "6px",
+                }}
+              >
+                <span>Proceed to AI Building Design</span>
+                <span>💬 →</span>
+              </button>
+            </div>
+          </div>
+        )}
       </aside>
 
       {/* 3D Geospatial Globe */}
       <main className="globe-container">
+        {/* Floating Re-Open Sidebar Button when Collapsed */}
+        {isSidebarCollapsed && (
+          <button
+            className="sidebar-toggle-floating"
+            onClick={() => setIsSidebarCollapsed(false)}
+            title="Open AI Architect Sidebar"
+          >
+            <span>💬</span>
+            <span>Open AI Architect</span>
+          </button>
+        )}
+
         <CesiumGlobe
           ref={globeRef}
           ionToken={CESIUM_TOKEN}
@@ -561,69 +745,22 @@ export default function HomePage() {
           onDrawingChange={(drawing) => setIsDrawing(drawing)}
         />
 
-        {/* Floating Map Toolbar */}
+        {/* Floating GIS Map Controls HUD (Compass, Zoom, 2D/3D, Tilt, Rotate, Neighborhoods) */}
         {globeReady && (
-          <div className="floating-toolbar">
-            <button
-              className={`toolbar-btn ${cameraMode === "2d" ? "active" : ""}`}
-              title={cameraMode === "2d" ? "Switch to 3D Perspective" : "Switch to 2D Top-Down CAD View"}
-              onClick={() => handleToggleCameraMode(cameraMode === "2d" ? "3d" : "2d")}
-            >
-              {cameraMode === "2d" ? "📐" : "🌐"}
-            </button>
-            <button
-              className={`toolbar-btn ${mapStyle === "studio" ? "active" : ""}`}
-              title={mapStyle === "studio" ? "Back to Satellite Map" : "Switch to 3D Architectural Studio"}
-              onClick={() => handleSelectMapStyle(mapStyle === "studio" ? "google_satellite" : "studio")}
-            >
-              🏛️
-            </button>
-            <button
-              className={`toolbar-btn ${isDrawing ? "active" : ""}`}
-              title={isDrawing ? "Drawing mode active" : "Draw Plot on Map"}
-              onClick={() => {
-                if (isDrawing) {
-                  globeRef.current?.cancelDrawingPlot();
-                } else {
-                  globeRef.current?.startDrawingPlot();
-                }
-              }}
-            >
-              ✏️
-            </button>
-            {latestAnalysis && (
-              <button
-                className="toolbar-btn"
-                title="Focus 3D Building"
-                onClick={() => globeRef.current?.flyToBuilding()}
-              >
-                🎥
-              </button>
-            )}
-            {latestAnalysis && (
-              <button
-                className={`toolbar-btn ${isOrbiting ? "active" : ""}`}
-                title="360° Cinematic Orbit"
-                onClick={toggleOrbitMode}
-              >
-                🔄
-              </button>
-            )}
-            <button
-              className="toolbar-btn"
-              title="Toggle Sun Shadows"
-              onClick={() => globeRef.current?.toggleShadows()}
-            >
-              ☀️
-            </button>
-            <button
-              className="toolbar-btn"
-              title="Reset View to City"
-              onClick={() => handleCityChange(selectedCity)}
-            >
-              🏙️
-            </button>
-          </div>
+          <MapControls
+            globeRef={globeRef}
+            cameraMode={cameraMode}
+            onToggleCameraMode={handleToggleCameraMode}
+            mapStyle={mapStyle}
+            onSelectMapStyle={handleSelectMapStyle}
+            isOrbiting={isOrbiting}
+            onToggleOrbit={toggleOrbitMode}
+            hasBuilding={Boolean(latestAnalysis)}
+            hasPlot={Boolean(currentPlot && currentPlot.length >= 3)}
+            neighborhoods={NEIGHBORHOODS[selectedCity] || []}
+            currentCityName={CITIES[selectedCity].label}
+            onSelectNeighborhood={handleSelectNeighborhood}
+          />
         )}
 
         {/* Floating Building & Feasibility HUD */}
