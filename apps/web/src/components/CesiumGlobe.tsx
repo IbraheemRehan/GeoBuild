@@ -512,51 +512,186 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
       },
       zoomIn: () => {
         const viewer = viewerRef.current;
-        if (!viewer) return;
-        const carto = viewer.camera.positionCartographic;
-        const currentHeight = carto ? carto.height : 500;
-        const zoomDelta = Math.max(currentHeight * 0.35, 15);
-        viewer.camera.zoomIn(zoomDelta);
+        const Cesium = (window as any).Cesium;
+        if (!viewer || !Cesium) return;
+
+        const scene = viewer.scene;
+        let targetCartesian: any = null;
+        try {
+          const centerPos = new Cesium.Cartesian2(
+            scene.canvas.clientWidth / 2,
+            scene.canvas.clientHeight / 2
+          );
+          const ray = viewer.camera.getPickRay(centerPos);
+          if (ray) targetCartesian = scene.globe.pick(ray, scene);
+        } catch {}
+
+        if (targetCartesian) {
+          const currentRange = Cesium.Cartesian3.distance(viewer.camera.position, targetCartesian);
+          const newRange = Math.max(currentRange * 0.65, 12);
+          const sphere = new Cesium.BoundingSphere(targetCartesian, 0);
+          viewer.camera.flyToBoundingSphere(sphere, {
+            offset: new Cesium.HeadingPitchRange(viewer.camera.heading, viewer.camera.pitch, newRange),
+            duration: 0.25,
+          });
+        } else {
+          const carto = viewer.camera.positionCartographic;
+          const currentHeight = carto ? carto.height : 500;
+          viewer.camera.zoomIn(Math.max(currentHeight * 0.35, 15));
+        }
       },
       zoomOut: () => {
         const viewer = viewerRef.current;
-        if (!viewer) return;
-        const carto = viewer.camera.positionCartographic;
-        const currentHeight = carto ? carto.height : 500;
-        const zoomDelta = Math.max(currentHeight * 0.35, 15);
-        viewer.camera.zoomOut(zoomDelta);
+        const Cesium = (window as any).Cesium;
+        if (!viewer || !Cesium) return;
+
+        const scene = viewer.scene;
+        let targetCartesian: any = null;
+        try {
+          const centerPos = new Cesium.Cartesian2(
+            scene.canvas.clientWidth / 2,
+            scene.canvas.clientHeight / 2
+          );
+          const ray = viewer.camera.getPickRay(centerPos);
+          if (ray) targetCartesian = scene.globe.pick(ray, scene);
+        } catch {}
+
+        if (targetCartesian) {
+          const currentRange = Cesium.Cartesian3.distance(viewer.camera.position, targetCartesian);
+          const newRange = Math.min(currentRange * 1.45, 100000);
+          const sphere = new Cesium.BoundingSphere(targetCartesian, 0);
+          viewer.camera.flyToBoundingSphere(sphere, {
+            offset: new Cesium.HeadingPitchRange(viewer.camera.heading, viewer.camera.pitch, newRange),
+            duration: 0.25,
+          });
+        } else {
+          const carto = viewer.camera.positionCartographic;
+          const currentHeight = carto ? carto.height : 500;
+          viewer.camera.zoomOut(Math.max(currentHeight * 0.35, 15));
+        }
       },
       tiltCamera: (degrees: number) => {
         const viewer = viewerRef.current;
         const Cesium = (window as any).Cesium;
         if (!viewer || !Cesium) return;
-        if (degrees > 0) {
-          viewer.camera.lookUp(Cesium.Math.toRadians(degrees));
-        } else {
-          viewer.camera.lookDown(Cesium.Math.toRadians(-degrees));
+
+        const scene = viewer.scene;
+        let targetCartesian: any = null;
+        try {
+          const centerPos = new Cesium.Cartesian2(
+            scene.canvas.clientWidth / 2,
+            scene.canvas.clientHeight / 2
+          );
+          const ray = viewer.camera.getPickRay(centerPos);
+          if (ray) {
+            targetCartesian = scene.globe.pick(ray, scene);
+          }
+        } catch {}
+
+        if (!targetCartesian) {
+          const cLon = lastPlotCenterRef.current?.[0] ?? 74.3587;
+          const cLat = lastPlotCenterRef.current?.[1] ?? 31.5204;
+          targetCartesian = Cesium.Cartesian3.fromDegrees(cLon, cLat, 0);
         }
+
+        const range = Cesium.Cartesian3.distance(viewer.camera.position, targetCartesian);
+        const currentHeading = viewer.camera.heading;
+        const currentPitch = viewer.camera.pitch;
+
+        // degrees > 0 means tilt up towards horizontal (facades)
+        // degrees < 0 means tilt down towards top-down 2D
+        const newPitch = Math.min(
+          Math.max(currentPitch + Cesium.Math.toRadians(degrees), Cesium.Math.toRadians(-89.5)),
+          Cesium.Math.toRadians(-10)
+        );
+
+        const sphere = new Cesium.BoundingSphere(targetCartesian, 0);
+        viewer.camera.flyToBoundingSphere(sphere, {
+          offset: new Cesium.HeadingPitchRange(currentHeading, newPitch, range),
+          duration: 0.3,
+        });
       },
       rotateCamera: (degrees: number) => {
         const viewer = viewerRef.current;
         const Cesium = (window as any).Cesium;
         if (!viewer || !Cesium) return;
-        viewer.camera.rotateRight(Cesium.Math.toRadians(degrees));
+
+        const scene = viewer.scene;
+        let targetCartesian: any = null;
+        try {
+          const centerPos = new Cesium.Cartesian2(
+            scene.canvas.clientWidth / 2,
+            scene.canvas.clientHeight / 2
+          );
+          const ray = viewer.camera.getPickRay(centerPos);
+          if (ray) {
+            targetCartesian = scene.globe.pick(ray, scene);
+          }
+        } catch {}
+
+        if (!targetCartesian) {
+          const cLon = lastPlotCenterRef.current?.[0] ?? 74.3587;
+          const cLat = lastPlotCenterRef.current?.[1] ?? 31.5204;
+          targetCartesian = Cesium.Cartesian3.fromDegrees(cLon, cLat, 0);
+        }
+
+        const range = Cesium.Cartesian3.distance(viewer.camera.position, targetCartesian);
+        const currentHeading = viewer.camera.heading;
+        const currentPitch = viewer.camera.pitch;
+        const newHeading = currentHeading + Cesium.Math.toRadians(degrees);
+
+        const clampedPitch = Math.min(
+          Math.max(currentPitch, Cesium.Math.toRadians(-89.5)),
+          Cesium.Math.toRadians(-5)
+        );
+
+        const sphere = new Cesium.BoundingSphere(targetCartesian, 0);
+        viewer.camera.flyToBoundingSphere(sphere, {
+          offset: new Cesium.HeadingPitchRange(newHeading, clampedPitch, range),
+          duration: 0.3,
+        });
       },
       resetNorth: () => {
         const viewer = viewerRef.current;
         const Cesium = (window as any).Cesium;
         if (!viewer || !Cesium) return;
-        const carto = viewer.camera.positionCartographic;
-        if (!carto) return;
-        viewer.camera.flyTo({
-          destination: Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, carto.height),
-          orientation: {
-            heading: 0,
-            pitch: viewer.camera.pitch,
-            roll: 0,
-          },
-          duration: 0.8,
-        });
+
+        const scene = viewer.scene;
+        let targetCartesian: any = null;
+        try {
+          const centerPos = new Cesium.Cartesian2(
+            scene.canvas.clientWidth / 2,
+            scene.canvas.clientHeight / 2
+          );
+          const ray = viewer.camera.getPickRay(centerPos);
+          if (ray) targetCartesian = scene.globe.pick(ray, scene);
+        } catch {}
+
+        if (targetCartesian) {
+          const range = Cesium.Cartesian3.distance(viewer.camera.position, targetCartesian);
+          const currentPitch = viewer.camera.pitch;
+          const clampedPitch = Math.min(
+            Math.max(currentPitch, Cesium.Math.toRadians(-89.5)),
+            Cesium.Math.toRadians(-5)
+          );
+          const sphere = new Cesium.BoundingSphere(targetCartesian, 0);
+          viewer.camera.flyToBoundingSphere(sphere, {
+            offset: new Cesium.HeadingPitchRange(0, clampedPitch, range),
+            duration: 0.5,
+          });
+        } else {
+          const carto = viewer.camera.positionCartographic;
+          if (!carto) return;
+          viewer.camera.flyTo({
+            destination: Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, carto.height),
+            orientation: {
+              heading: 0,
+              pitch: viewer.camera.pitch,
+              roll: 0,
+            },
+            duration: 0.6,
+          });
+        }
       },
       setCameraView: (mode: "2d" | "3d", targetLng?: number, targetLat?: number) => {
         const viewer = viewerRef.current;
@@ -602,15 +737,35 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
       clearModel: clearModelInternal,
       toggleOrbit: (enabled?: boolean) => {
         const viewer = viewerRef.current;
-        if (!viewer) return;
+        const Cesium = (window as any).Cesium;
+        if (!viewer || !Cesium) return;
+
         if (orbitIntervalRef.current) {
           clearInterval(orbitIntervalRef.current);
           orbitIntervalRef.current = null;
+          viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
           if (enabled === false) return;
         }
+
         if (enabled !== false) {
+          const cLon = lastPlotCenterRef.current?.[0] ?? 74.3587;
+          const cLat = lastPlotCenterRef.current?.[1] ?? 31.5204;
+          const target = Cesium.Cartesian3.fromDegrees(cLon, cLat, 0);
+          const transform = Cesium.Transforms.eastNorthUpToFixedFrame(target);
+
+          let currentHeading = viewer.camera.heading;
+          const pitch = Math.min(
+            Math.max(viewer.camera.pitch, Cesium.Math.toRadians(-60)),
+            Cesium.Math.toRadians(-15)
+          );
+          const range = Math.max(Cesium.Cartesian3.distance(viewer.camera.position, target), 30);
+
           orbitIntervalRef.current = window.setInterval(() => {
-            viewer.camera.rotateRight(0.005);
+            currentHeading += 0.005;
+            viewer.camera.lookAtTransform(
+              transform,
+              new Cesium.HeadingPitchRange(currentHeading, pitch, range)
+            );
           }, 30);
         }
       },
