@@ -36,6 +36,8 @@ interface TopNavBarProps {
   isSidebarOpen: boolean;
   onToggleSidebar: () => void;
   hasBuilding: boolean;
+  theme?: "dark" | "light";
+  onToggleTheme?: () => void;
 }
 
 const PRESET_BUTTONS: { key: PlotPresetKey; label: string; dim: string }[] = [
@@ -69,20 +71,22 @@ export default function TopNavBar({
   isSidebarOpen,
   onToggleSidebar,
   hasBuilding,
+  theme = "dark",
+  onToggleTheme,
 }: TopNavBarProps) {
-  const [showSectors, setShowSectors] = useState(false);
+  const [showLocationMenu, setShowLocationMenu] = useState(false);
   const [showStyleMenu, setShowStyleMenu] = useState(false);
-  const sectorDropdownRef = useRef<HTMLDivElement>(null);
+  const locationDropdownRef = useRef<HTMLDivElement>(null);
   const styleDropdownRef = useRef<HTMLDivElement>(null);
 
   // Close dropdowns on outside click
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (
-        sectorDropdownRef.current &&
-        !sectorDropdownRef.current.contains(event.target as Node)
+        locationDropdownRef.current &&
+        !locationDropdownRef.current.contains(event.target as Node)
       ) {
-        setShowSectors(false);
+        setShowLocationMenu(false);
       }
       if (
         styleDropdownRef.current &&
@@ -99,7 +103,7 @@ export default function TopNavBar({
 
   return (
     <header className="top-nav-bar">
-      {/* ===== Left Section: Brand Logo & City/Sector Switcher ===== */}
+      {/* ===== Left Section: Brand Logo & Location Hub ===== */}
       <div className="nav-group-left">
         {/* Brand Identity */}
         <div className="brand-badge">
@@ -135,52 +139,56 @@ export default function TopNavBar({
             </svg>
           </div>
           <div className="brand-title-wrap">
-            <span className="brand-title">GeoBuild <span className="brand-ai">AI</span></span>
+            <span className="brand-title">
+              GeoBuild <span className="brand-ai">AI</span>
+            </span>
             <span className="brand-tag">BIM • PK</span>
           </div>
         </div>
 
         <div className="nav-divider" />
 
-        {/* City Switcher Pill Group */}
-        <div className="city-pill-group">
-          {Object.entries(cities).map(([key, data]) => {
-            const active = selectedCity === key;
-            return (
-              <button
-                key={key}
-                onClick={() => onSelectCity(key)}
-                className={`city-pill-btn ${active ? "active" : ""}`}
-                title={`Switch focus to ${data.label}`}
-              >
-                {data.label}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Pakistani Sectors Quick Jump Dropdown */}
-        <div className="dropdown-container" ref={sectorDropdownRef}>
+        {/* Unified Location Dropdown: Cities & Pakistani Sectors */}
+        <div className="dropdown-container" ref={locationDropdownRef}>
           <button
-            onClick={() => setShowSectors(!showSectors)}
-            className={`sector-dropdown-btn ${showSectors ? "active" : ""}`}
-            title={`Select neighborhood in ${cityName}`}
+            onClick={() => setShowLocationMenu(!showLocationMenu)}
+            className={`location-trigger-btn ${showLocationMenu ? "active" : ""}`}
+            title="Switch City & Fly to Pakistani Sectors"
           >
-            <span className="pin-icon">📍</span>
-            <span className="sector-btn-label">{cityName} Sectors</span>
-            <span className="dropdown-arrow">{showSectors ? "▲" : "▼"}</span>
+            <span>📍</span>
+            <span style={{ fontWeight: 700 }}>{cityName}</span>
+            <span style={{ opacity: 0.7, fontSize: "0.7rem" }}>• Sectors</span>
+            <span className="dropdown-arrow">{showLocationMenu ? "▲" : "▼"}</span>
           </button>
 
-          {showSectors && (
-            <div className="nav-dropdown-menu">
-              <div className="dropdown-section-title">Fly to Pakistani Sector</div>
+          {showLocationMenu && (
+            <div className="location-dropdown-menu">
+              <div className="dropdown-section-title">Select Focus City</div>
+              <div className="location-city-tabs">
+                {Object.entries(cities).map(([key, data]) => {
+                  const active = selectedCity === key;
+                  return (
+                    <button
+                      key={key}
+                      onClick={() => onSelectCity(key)}
+                      className={`location-city-tab-btn ${active ? "active" : ""}`}
+                    >
+                      {data.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="dropdown-section-title" style={{ marginTop: "4px" }}>
+                {cityName} Sectors & Communities
+              </div>
               <div className="dropdown-items-scroll">
                 {neighborhoods.map((n) => (
                   <button
                     key={n.name}
                     onClick={() => {
                       onSelectNeighborhood(n);
-                      setShowSectors(false);
+                      setShowLocationMenu(false);
                     }}
                     className="dropdown-item-btn"
                   >
@@ -266,8 +274,17 @@ export default function TopNavBar({
         </div>
       </div>
 
-      {/* ===== Right Section: Basemap, Camera View & AI Copilot Toggle ===== */}
+      {/* ===== Right Section: Theme Toggle, Basemap, Camera View & AI Copilot ===== */}
       <div className="nav-group-right">
+        {/* White and Black Theme Toggle */}
+        <button
+          onClick={onToggleTheme}
+          className="theme-toggle-btn"
+          title={`Switch to ${theme === "dark" ? "Light (White) Mode" : "Dark (Black) Mode"}`}
+        >
+          <span>{theme === "dark" ? "☀️ Light" : "🌙 Dark"}</span>
+        </button>
+
         {/* Basemap Switcher Dropdown */}
         <div className="dropdown-container" ref={styleDropdownRef}>
           <button

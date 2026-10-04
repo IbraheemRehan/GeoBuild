@@ -60,6 +60,51 @@ const PRESET_LABELS: Record<PlotPresetKey, string> = {
   "2kanal": "2 Kanal (75×120 ft)",
 };
 
+const ARCHITECTURAL_PRESETS = [
+  {
+    icon: "🏠",
+    title: "5 Marla Modern",
+    tag: "2 Manzil",
+    prompt: "Design a modern 2-storey house on 5 marla plot with 4 bedrooms, rooftop terrace, and contemporary Pakistani facade",
+  },
+  {
+    icon: "🏰",
+    title: "10 Marla Villa",
+    tag: "Luxury",
+    prompt: "10 marla luxury villa with 4 bedrooms, servant quarter, covered porch, and traditional jali screens",
+  },
+  {
+    icon: "🌇",
+    title: "Terrace & Jali",
+    tag: "Feature",
+    prompt: "Add rooftop mumty terrace, traditional laser-cut jali screens, and modern cantilevered balcony",
+  },
+  {
+    icon: "🚗",
+    title: "1 Kanal Porch",
+    tag: "Executive",
+    prompt: "1 kanal modern house with drawing room, 2-car covered porch, 5 bedrooms, and lawn setback",
+  },
+  {
+    icon: "🌿",
+    title: "Rooftop Mumty",
+    tag: "Terrace",
+    prompt: "Modern 2-storey house with concrete mumty stair tower, rooftop water tank, and steel shade pergola",
+  },
+  {
+    icon: "🕌",
+    title: "Contemporary Islamic",
+    tag: "Heritage",
+    prompt: "Contemporary Islamic facade with elegant arched porch, geometric jali patterns, and warm teak wood accents",
+  },
+  {
+    icon: "🇵🇰",
+    title: "2 Manzil Ghar",
+    tag: "اردو",
+    prompt: "5 marla ka khubsurat 2 manzil ghar, 3 kamre, car porch, drawing room, aur chat par mumty",
+  },
+];
+
 interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "system";
@@ -133,6 +178,34 @@ export default function HomePage() {
   // Map & Camera mode state
   const [mapStyle, setMapStyle] = useState<MapStyleKey>("google_satellite");
   const [cameraMode, setCameraMode] = useState<"2d" | "3d">("3d");
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const ribbonRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const savedTheme = localStorage.getItem("geobuild-theme") as "dark" | "light" | null;
+    if (savedTheme) {
+      setTheme(savedTheme);
+      document.documentElement.setAttribute("data-theme", savedTheme);
+    } else {
+      document.documentElement.setAttribute("data-theme", "dark");
+    }
+  }, []);
+
+  const handleToggleTheme = useCallback(() => {
+    setTheme((prev) => {
+      const next = prev === "dark" ? "light" : "dark";
+      localStorage.setItem("geobuild-theme", next);
+      document.documentElement.setAttribute("data-theme", next);
+      return next;
+    });
+  }, []);
+
+  const scrollRibbon = (direction: "left" | "right") => {
+    if (ribbonRef.current) {
+      const scrollAmount = direction === "left" ? -200 : 200;
+      ribbonRef.current.scrollBy({ left: scrollAmount, behavior: "smooth" });
+    }
+  };
 
   // Plot state
   const [currentPlot, setCurrentPlot] = useState<[number, number][] | null>(null);
@@ -526,6 +599,8 @@ export default function HomePage() {
         isSidebarOpen={!isSidebarCollapsed}
         onToggleSidebar={() => setIsSidebarCollapsed((prev) => !prev)}
         hasBuilding={Boolean(latestAnalysis)}
+        theme={theme}
+        onToggleTheme={handleToggleTheme}
       />
 
       {/* 2. Floating AI Architect Copilot Drawer (Left Side) */}
@@ -764,30 +839,42 @@ export default function HomePage() {
 
             {/* Pinned Sticky Input Dock */}
             <div className="drawer-input-dock">
-              <div className="prompt-pills-scroll">
+              {/* Moving Architectural Preset Ribbon */}
+              <div className="moving-ribbon-wrapper">
                 <button
-                  className="prompt-pill-btn"
-                  onClick={() => setInputValue("5 marla ka ghar, 2 manzil, 3 kamre, contemporary pakistani facade")}
+                  className="ribbon-arrow-btn left"
+                  onClick={() => scrollRibbon("left")}
+                  title="Scroll left"
                 >
-                  🏠 5 Marla Modern
+                  ‹
                 </button>
+
+                <div className="moving-ribbon-viewport" ref={ribbonRef}>
+                  <div className="moving-ribbon-track">
+                    {[...ARCHITECTURAL_PRESETS, ...ARCHITECTURAL_PRESETS].map((preset, idx) => (
+                      <button
+                        key={`${preset.title}-${idx}`}
+                        className="moving-ribbon-card"
+                        onClick={() => {
+                          setInputValue(preset.prompt);
+                          handleSend(preset.prompt);
+                        }}
+                        title={`Click to generate: ${preset.prompt}`}
+                      >
+                        <span>{preset.icon}</span>
+                        <span>{preset.title}</span>
+                        <span className="ribbon-card-tag">{preset.tag}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <button
-                  className="prompt-pill-btn"
-                  onClick={() => setInputValue("10 marla luxury villa with 4 bedrooms, rooftop terrace & covered parking")}
+                  className="ribbon-arrow-btn right"
+                  onClick={() => scrollRibbon("right")}
+                  title="Scroll right"
                 >
-                  🏰 10 Marla Villa
-                </button>
-                <button
-                  className="prompt-pill-btn"
-                  onClick={() => setInputValue("Add rooftop terrace, traditional jali screens, and modern balcony")}
-                >
-                  🌇 Terrace & Jali
-                </button>
-                <button
-                  className="prompt-pill-btn"
-                  onClick={() => setInputValue("1 kanal modern house with drawing room and 2 car porch")}
-                >
-                  🚗 1 Kanal Porch
+                  ›
                 </button>
               </div>
 
@@ -911,6 +998,7 @@ export default function HomePage() {
             onToggleShadows={() => globeRef.current?.toggleShadows()}
             isOrbiting={isOrbiting}
             onClose={() => setLatestAnalysis(null)}
+            isSidebarOpen={!isSidebarCollapsed}
           />
         )}
       </main>
