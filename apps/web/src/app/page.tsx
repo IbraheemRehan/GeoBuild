@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback } from "react";
 import dynamic from "next/dynamic";
-import type { CesiumGlobeRef } from "@/components/CesiumGlobe";
+import type { CesiumGlobeRef, MapStyleKey } from "@/components/CesiumGlobe";
 import PlotSelector, { type PlotPresetKey } from "@/components/PlotSelector";
 import BuildingAnalysisHUD from "@/components/BuildingAnalysisHUD";
 
@@ -43,35 +43,48 @@ interface ChatMessage {
   timestamp: Date;
 }
 
-// Helper to create preset plot coordinates centered at (centerLng, centerLat)
-function createPresetPlotCoordinates(
-  centerLng: number,
-  centerLat: number,
-  preset: PlotPresetKey
-): [number, number][] {
-  // Dimensions in metres (Rule 7)
-  const dims: Record<PlotPresetKey, { width: number; depth: number }> = {
-    "5marla": { width: 7.62, depth: 13.72 },   // 25x45 ft ~ 104.5 m² (Rule 10)
-    "10marla": { width: 10.67, depth: 19.81 }, // 35x65 ft ~ 211.4 m²
-    "1kanal": { width: 15.24, depth: 27.43 },  // 50x90 ft ~ 418.0 m²
-    "2kanal": { width: 22.86, depth: 36.58 },  // 75x120 ft ~ 836.0 m²
-  };
+// Preset plot dimensions in metres (Rule 7, 10)
+const PRESET_DIMS: Record<PlotPresetKey, { width: number; depth: number }> = {
+  "5marla": { width: 7.62, depth: 13.72 },   // 25x45 ft ~ 104.5 m²
+  "10marla": { width: 10.67, depth: 19.81 }, // 35x65 ft ~ 211.4 m²
+  "1kanal": { width: 15.24, depth: 27.43 },  // 50x90 ft ~ 418.0 m²
+  "2kanal": { width: 22.86, depth: 36.58 },  // 75x120 ft ~ 836.0 m²
+};
 
-  const { width, depth } = dims[preset];
-  const latRad = (centerLat * Math.PI) / 180;
+// Helper to create rotated rectangular plot coordinates centered at (cLng, cLat)
+function createOrientedPlotCoordinates(
+  cLng: number,
+  cLat: number,
+  preset: PlotPresetKey,
+  rotDeg: number = 0
+): [number, number][] {
+  const { width, depth } = PRESET_DIMS[preset];
+  const latRad = (cLat * Math.PI) / 180;
   const mPerDegLat = 111132;
   const mPerDegLng = 111132 * Math.cos(latRad);
 
-  const halfW = width / 2 / mPerDegLng;
-  const halfD = depth / 2 / mPerDegLat;
+  const halfW = width / 2;
+  const halfD = depth / 2;
+  const rad = (rotDeg * Math.PI) / 180;
+  const cosR = Math.cos(rad);
+  const sinR = Math.sin(rad);
 
-  // 4 corners: front-left, front-right, back-right, back-left
-  return [
-    [centerLng - halfW, centerLat - halfD],
-    [centerLng + halfW, centerLat - halfD],
-    [centerLng + halfW, centerLat + halfD],
-    [centerLng - halfW, centerLat + halfD],
+  // 4 corners relative to center in metres:
+  // 0: front-left, 1: front-right, 2: back-right, 3: back-left
+  const localCorners = [
+    [-halfW, -halfD],
+    [+halfW, -halfD],
+    [+halfW, +halfD],
+    [-halfW, +halfD],
   ];
+
+  return localCorners.map(([x, y]) => {
+    const rx = x * cosR - y * sinR;
+    const ry = x * sinR + y * cosR;
+    const lng = cLng + rx / mPerDegLng;
+    const lat = cLat + ry / mPerDegLat;
+    return [lng, lat];
+  });
 }
 
 export default function HomePage() {
@@ -83,11 +96,18 @@ export default function HomePage() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [globeReady, setGlobeReady] = useState(false);
 
+  // Map & Camera mode state
+  const [mapStyle, setMapStyle] = useState<MapStyleKey>("google_satellite");
+  const [cameraMode, setCameraMode] = useState<"2d" | "3d">("3d");
+
   // Plot state
   const [currentPlot, setCurrentPlot] = useState<[number, number][] | null>(null);
+  const [plotCenter, setPlotCenter] = useState<[number, number]>([74.3587, 31.5204]);
   const [selectedPreset, setSelectedPreset] = useState<PlotPresetKey | "custom" | null>(null);
+  const [plotRotation, setPlotRotation] = useState<number>(0);
   const [plotMarla, setPlotMarla] = useState<number | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
+  const [isPlacing, setIsPlacing] = useState(false);
 
   // 3D Building & Analysis state
   const [latestAnalysis, setLatestAnalysis] = useState<{
@@ -101,15 +121,27 @@ export default function HomePage() {
   const handleCityChange = useCallback((city: CityKey) => {
     setSelectedCity(city);
     const coords = CITIES[city];
-    globeRef.current?.flyTo(coords.lng, coords.lat, 3500);
+    setPlotCenter([coords.lng, coords.lat]);
+    globeRef.current?.flyTo(coords.lng, coords.lat, 3000);
   }, []);
+
+  // Map style toggle
+  const handleSelectMapStyle = useCallback((style: MapStyleKey) => {
+    setMapStyle(style);
+    globeRef.current?.setMapStyle(style);
+  }, []);
+
+  // 2D / 3D camera mode toggle
+  const handleToggleCameraMode = useCallback((mode: "2d" | "3d") => {
+    setCameraMode(mode);
+    globeRef.current?.setCameraView(mode, plotCenter[0], plotCenter[1]);
+  }, [plotCenter]);
 
   // Preset plot selection
   const handleSelectPreset = useCallback(
     (preset: PlotPresetKey) => {
       setSelectedPreset(preset);
-      const cityCoords = CITIES[selectedCity];
-      const coords = createPresetPlotCoordinates(cityCoords.lng, cityCoords.lat, preset);
+      const coords = createOrientedPlotCoordinates(plotCenter[0], plotCenter[1], preset, plotRotation);
       setCurrentPlot(coords);
 
       const marlaMap: Record<PlotPresetKey, number> = {
@@ -122,10 +154,49 @@ export default function HomePage() {
 
       const label = `${preset === "5marla" ? "5 Marla" : preset === "10marla" ? "10 Marla" : preset === "1kanal" ? "1 Kanal" : "2 Kanal"} Plot`;
       globeRef.current?.setPlotPolygon(coords, label);
-      globeRef.current?.flyTo(cityCoords.lng, cityCoords.lat, 180);
+      globeRef.current?.setCameraView(cameraMode, plotCenter[0], plotCenter[1]);
     },
-    [selectedCity]
+    [plotCenter, plotRotation, cameraMode]
   );
+
+  // Rotate plot
+  const handleRotatePlot = useCallback(
+    (deg: number) => {
+      setPlotRotation(deg);
+      if (selectedPreset && selectedPreset !== "custom") {
+        const coords = createOrientedPlotCoordinates(plotCenter[0], plotCenter[1], selectedPreset, deg);
+        setCurrentPlot(coords);
+        const label = `${selectedPreset === "5marla" ? "5 Marla" : selectedPreset === "10marla" ? "10 Marla" : "1 Kanal"} Plot`;
+        globeRef.current?.setPlotPolygon(coords, label);
+      }
+    },
+    [selectedPreset, plotCenter]
+  );
+
+  // Click map to place plot
+  const handleStartPlacement = useCallback(() => {
+    setIsPlacing(true);
+    globeRef.current?.startPlotPlacement((lng, lat) => {
+      setIsPlacing(false);
+      setPlotCenter([lng, lat]);
+      const preset = selectedPreset && selectedPreset !== "custom" ? selectedPreset : "5marla";
+      setSelectedPreset(preset);
+      const coords = createOrientedPlotCoordinates(lng, lat, preset, plotRotation);
+      setCurrentPlot(coords);
+
+      const marlaMap: Record<PlotPresetKey, number> = {
+        "5marla": 5.0,
+        "10marla": 10.0,
+        "1kanal": 20.0,
+        "2kanal": 40.0,
+      };
+      setPlotMarla(marlaMap[preset]);
+
+      const label = `${preset === "5marla" ? "5 Marla" : preset === "10marla" ? "10 Marla" : "1 Kanal"} Plot`;
+      globeRef.current?.setPlotPolygon(coords, label);
+      globeRef.current?.setCameraView(cameraMode, lng, lat);
+    });
+  }, [selectedPreset, plotRotation, cameraMode]);
 
   // Custom plot drawn on map
   const handlePlotDrawn = useCallback((coords: [number, number][]) => {
@@ -135,7 +206,10 @@ export default function HomePage() {
     // Approximate area in Marla (1 marla ≈ 25.2929 m²)
     const sumX = coords.reduce((acc, c) => acc + c[0], 0);
     const sumY = coords.reduce((acc, c) => acc + c[1], 0);
+    const cLon = sumX / coords.length;
     const cLat = sumY / coords.length;
+    setPlotCenter([cLon, cLat]);
+
     const latRad = (cLat * Math.PI) / 180;
     const mPerDegLat = 111132;
     const mPerDegLng = 111132 * Math.cos(latRad);
@@ -220,11 +294,15 @@ export default function HomePage() {
           }
 
           const cityCoords = CITIES[selectedCity];
-          activePlot = createPresetPlotCoordinates(cityCoords.lng, cityCoords.lat, presetKey);
+          activePlot = createOrientedPlotCoordinates(cityCoords.lng, cityCoords.lat, presetKey, plotRotation);
           setCurrentPlot(activePlot);
           setSelectedPreset(presetKey);
           const label = `${presetKey === "5marla" ? "5 Marla" : presetKey === "10marla" ? "10 Marla" : "1 Kanal"} Plot`;
           globeRef.current?.setPlotPolygon(activePlot, label);
+        }
+
+        if (!activePlot || activePlot.length < 3) {
+          throw new Error("Unable to establish plot coordinates for 3D generation.");
         }
 
         setStatusMessage("Building procedural 3D model (GLB)...");
@@ -370,10 +448,18 @@ export default function HomePage() {
             selectedPreset={selectedPreset}
             onSelectPreset={handleSelectPreset}
             onStartDrawing={() => globeRef.current?.startDrawingPlot()}
+            onStartPlacement={handleStartPlacement}
             onClearPlot={handleClearPlot}
             isDrawing={isDrawing}
+            isPlacing={isPlacing}
             hasPlot={Boolean(currentPlot && currentPlot.length >= 3)}
             plotMarla={plotMarla}
+            mapStyle={mapStyle}
+            onSelectMapStyle={handleSelectMapStyle}
+            cameraMode={cameraMode}
+            onToggleCameraMode={handleToggleCameraMode}
+            plotRotation={plotRotation}
+            onRotatePlot={handleRotatePlot}
           />
         </div>
 
@@ -478,6 +564,20 @@ export default function HomePage() {
         {/* Floating Map Toolbar */}
         {globeReady && (
           <div className="floating-toolbar">
+            <button
+              className={`toolbar-btn ${cameraMode === "2d" ? "active" : ""}`}
+              title={cameraMode === "2d" ? "Switch to 3D Perspective" : "Switch to 2D Top-Down CAD View"}
+              onClick={() => handleToggleCameraMode(cameraMode === "2d" ? "3d" : "2d")}
+            >
+              {cameraMode === "2d" ? "📐" : "🌐"}
+            </button>
+            <button
+              className={`toolbar-btn ${mapStyle === "studio" ? "active" : ""}`}
+              title={mapStyle === "studio" ? "Back to Satellite Map" : "Switch to 3D Architectural Studio"}
+              onClick={() => handleSelectMapStyle(mapStyle === "studio" ? "google_satellite" : "studio")}
+            >
+              🏛️
+            </button>
             <button
               className={`toolbar-btn ${isDrawing ? "active" : ""}`}
               title={isDrawing ? "Drawing mode active" : "Draw Plot on Map"}

@@ -15,15 +15,21 @@ import type {
   ScreenSpaceEventHandler,
 } from "cesium";
 
+export type MapStyleKey = "google_satellite" | "streets" | "blueprint" | "studio";
+
 export interface CesiumGlobeRef {
   viewer: CesiumViewer | null;
   flyTo: (lng: number, lat: number, height?: number) => void;
   flyToBuilding: () => void;
+  setCameraView: (mode: "2d" | "3d", targetLng?: number, targetLat?: number) => void;
+  setMapStyle: (style: MapStyleKey) => void;
   setPlotPolygon: (coords: [number, number][], label?: string) => void;
   clearPlot: () => void;
   startDrawingPlot: () => void;
   finishDrawingPlot: () => void;
   cancelDrawingPlot: () => void;
+  startPlotPlacement: (onPlace: (lng: number, lat: number) => void) => void;
+  cancelPlotPlacement: () => void;
   loadGlbModel: (
     glbUri: string,
     center: [number, number],
@@ -42,6 +48,27 @@ interface CesiumGlobeProps {
   className?: string;
 }
 
+const MAP_STYLES: Record<
+  Exclude<MapStyleKey, "studio">,
+  { name: string; url: string; maxLevel: number }
+> = {
+  google_satellite: {
+    name: "HD Satellite",
+    url: "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
+    maxLevel: 21,
+  },
+  streets: {
+    name: "Clear Streets",
+    url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+    maxLevel: 19,
+  },
+  blueprint: {
+    name: "CAD Blueprint",
+    url: "https://basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}@2x.png",
+    maxLevel: 20,
+  },
+};
+
 const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
   ({ ionToken, onReady, onPlotDrawn, onDrawingChange, className }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -49,6 +76,8 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [isDrawing, setIsDrawing] = useState(false);
+    const [isPlacing, setIsPlacing] = useState(false);
+    const [currentStyle, setCurrentStyle] = useState<MapStyleKey>("google_satellite");
     const [drawingPoints, setDrawingPoints] = useState<[number, number][]>([]);
 
     // Internal entity references
@@ -56,11 +85,14 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
     const plotPolygonEntityRef = useRef<Entity | null>(null);
     const plotPolylineEntityRef = useRef<Entity | null>(null);
     const plotLabelEntityRef = useRef<Entity | null>(null);
+    const edgeLabelEntitiesRef = useRef<Entity[]>([]);
     const markerEntitiesRef = useRef<Entity[]>([]);
     const drawHandlerRef = useRef<ScreenSpaceEventHandler | null>(null);
+    const placeHandlerRef = useRef<ScreenSpaceEventHandler | null>(null);
     const activePointsRef = useRef<[number, number][]>([]);
     const dynamicDrawPolylineRef = useRef<Entity | null>(null);
     const orbitIntervalRef = useRef<number | null>(null);
+    const lastPlotCenterRef = useRef<[number, number] | null>(null);
 
     // Stop drawing cleanup
     const stopDrawing = useCallback(() => {
@@ -77,6 +109,15 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
       setDrawingPoints([]);
       onDrawingChange?.(false, 0);
     }, [onDrawingChange]);
+
+    // Stop placing cleanup
+    const stopPlacing = useCallback(() => {
+      if (placeHandlerRef.current && !placeHandlerRef.current.isDestroyed()) {
+        placeHandlerRef.current.destroy();
+        placeHandlerRef.current = null;
+      }
+      setIsPlacing(false);
+    }, []);
 
     // Clear plot entities
     const clearPlotInternal = useCallback(() => {
@@ -95,9 +136,42 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
         viewer.entities.remove(plotLabelEntityRef.current);
         plotLabelEntityRef.current = null;
       }
+      edgeLabelEntitiesRef.current.forEach((e) => viewer.entities.remove(e));
+      edgeLabelEntitiesRef.current = [];
       markerEntitiesRef.current.forEach((e) => viewer.entities.remove(e));
       markerEntitiesRef.current = [];
+      lastPlotCenterRef.current = null;
     }, []);
+
+    // Map style switcher
+    const setMapStyleInternal = useCallback((style: MapStyleKey) => {
+      const viewer = viewerRef.current;
+      const Cesium = (window as any).Cesium;
+      if (!viewer || !Cesium) return;
+
+      setCurrentStyle(style);
+
+      if (style === "studio") {
+        // Architectural Studio Mode: clean dark background, no globe imagery, pure 3D model focus
+        viewer.scene.globe.show = false;
+        viewer.scene.backgroundColor = Cesium.Color.fromCssColorString("#090d16");
+        if (viewer.scene.skyAtmosphere) viewer.scene.skyAtmosphere.show = false;
+        if (viewer.scene.skyBox) viewer.scene.skyBox.show = false;
+      } else {
+        viewer.scene.globe.show = true;
+        if (viewer.scene.skyAtmosphere) viewer.scene.skyAtmosphere.show = true;
+        const config = MAP_STYLES[style];
+        if (config?.url) {
+          viewer.imageryLayers.removeAll();
+          const provider = new Cesium.UrlTemplateImageryProvider({
+            url: config.url,
+            maximumLevel: config.maxLevel,
+          });
+          viewer.imageryLayers.addImageryProvider(provider);
+        }
+      }
+    }, []);
+
 
     // Set plot polygon
     const setPlotPolygonInternal = useCallback(
@@ -151,22 +225,62 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
         });
 
         // 4. Centroid label
+        // 4. Edge dimension labels (feet & metres)
+        edgeLabelEntitiesRef.current.forEach((e) => viewer.entities.remove(e));
+        edgeLabelEntitiesRef.current = [];
+
+        for (let i = 0; i < coords.length; i++) {
+          const p1 = coords[i];
+          const p2 = coords[(i + 1) % coords.length];
+          const c1 = Cesium.Cartesian3.fromDegrees(p1[0], p1[1], 0);
+          const c2 = Cesium.Cartesian3.fromDegrees(p2[0], p2[1], 0);
+          const distM = Cesium.Cartesian3.distance(c1, c2);
+          const distFt = distM * 3.28084;
+
+          const midLon = (p1[0] + p2[0]) / 2;
+          const midLat = (p1[1] + p2[1]) / 2;
+          const edgeTag = viewer.entities.add({
+            name: `Edge ${i + 1} Dimension`,
+            position: Cesium.Cartesian3.fromDegrees(midLon, midLat, 0.4),
+            label: {
+              text: `${distFt.toFixed(1)} ft (${distM.toFixed(1)}m)`,
+              font: "bold 11px 'Inter', sans-serif",
+              style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+              fillColor: Cesium.Color.fromCssColorString("#f1f5f9"),
+              outlineColor: Cesium.Color.fromCssColorString("#090d16"),
+              outlineWidth: 3,
+              backgroundColor: Cesium.Color.fromCssColorString("rgba(15, 23, 42, 0.75)"),
+              showBackground: true,
+              backgroundPadding: new Cesium.Cartesian2(6, 3),
+              verticalOrigin: Cesium.VerticalOrigin.CENTER,
+              horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
+              disableDepthTestDistance: Number.POSITIVE_INFINITY,
+            },
+          });
+          edgeLabelEntitiesRef.current.push(edgeTag);
+        }
+
+        // 5. Centroid label
         const sumX = coords.reduce((acc, c) => acc + c[0], 0);
         const sumY = coords.reduce((acc, c) => acc + c[1], 0);
         const centerLon = sumX / coords.length;
         const centerLat = sumY / coords.length;
+        lastPlotCenterRef.current = [centerLon, centerLat];
 
         if (label) {
           plotLabelEntityRef.current = viewer.entities.add({
             name: "Plot Info Label",
             position: Cesium.Cartesian3.fromDegrees(centerLon, centerLat, 0.5),
             label: {
-              text: label,
-              font: "13px 'Inter', sans-serif",
+              text: `📐 ${label}`,
+              font: "bold 13px 'Outfit', sans-serif",
               style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-              fillColor: Cesium.Color.WHITE,
+              fillColor: Cesium.Color.fromCssColorString("#38bdf8"),
               outlineColor: Cesium.Color.BLACK,
-              outlineWidth: 2,
+              outlineWidth: 3,
+              backgroundColor: Cesium.Color.fromCssColorString("rgba(15, 23, 42, 0.85)"),
+              showBackground: true,
+              backgroundPadding: new Cesium.Cartesian2(8, 4),
               verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
               disableDepthTestDistance: Number.POSITIVE_INFINITY,
             },
@@ -198,7 +312,6 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
 
         clearModelInternal();
 
-        // Convert base64 data URI to object URL for smoother memory handling
         let finalUri = glbUri;
         if (glbUri.startsWith("data:")) {
           try {
@@ -242,9 +355,9 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
         // Fly camera directly to 3D perspective of building
         viewer.flyTo(modelEntity, {
           offset: new Cesium.HeadingPitchRange(
-            Cesium.Math.toRadians(30),
+            Cesium.Math.toRadians(28),
             Cesium.Math.toRadians(-26),
-            55.0 // distance in metres
+            55.0
           ),
           duration: 2.2,
         });
@@ -252,13 +365,45 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
       [clearModelInternal]
     );
 
-    // Interactive drawing
+    // Click to place plot on map
+    const startPlotPlacementInternal = useCallback(
+      (onPlace: (lng: number, lat: number) => void) => {
+        const viewer = viewerRef.current;
+        const Cesium = (window as any).Cesium;
+        if (!viewer || !Cesium) return;
+
+        stopPlacing();
+        stopDrawing();
+        setIsPlacing(true);
+
+        const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+        placeHandlerRef.current = handler;
+
+        handler.setInputAction((click: any) => {
+          const ray = viewer.camera.getPickRay(click.position);
+          if (!ray) return;
+          const cartesian = viewer.scene.globe.pick(ray, viewer.scene);
+          if (!cartesian) return;
+
+          const cartographic = Cesium.Cartographic.fromCartesian(cartesian);
+          const lon = Cesium.Math.toDegrees(cartographic.longitude);
+          const lat = Cesium.Math.toDegrees(cartographic.latitude);
+
+          stopPlacing();
+          onPlace(lon, lat);
+        }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+      },
+      [stopDrawing, stopPlacing]
+    );
+
+    // Interactive polygon drawing
     const startDrawingPlotInternal = useCallback(() => {
       const viewer = viewerRef.current;
       const Cesium = (window as any).Cesium;
       if (!viewer || !Cesium) return;
 
       stopDrawing();
+      stopPlacing();
       clearPlotInternal();
 
       activePointsRef.current = [];
@@ -269,7 +414,6 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
       const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
       drawHandlerRef.current = handler;
 
-      // Dynamic polyline for drawing progress
       dynamicDrawPolylineRef.current = viewer.entities.add({
         name: "Plot Drawing Line",
         polyline: {
@@ -284,7 +428,6 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
         },
       });
 
-      // Left click to add vertex
       handler.setInputAction((click: any) => {
         const ray = viewer.camera.getPickRay(click.position);
         if (!ray) return;
@@ -300,7 +443,6 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
         setDrawingPoints([...activePointsRef.current]);
         onDrawingChange?.(true, count);
 
-        // Add visual vertex dot
         const dot = viewer.entities.add({
           position: cartesian,
           point: {
@@ -314,7 +456,6 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
         markerEntitiesRef.current.push(dot);
       }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
-      // Double click to finish
       handler.setInputAction(() => {
         if (activePointsRef.current.length >= 3) {
           const finalCoords = [...activePointsRef.current];
@@ -323,9 +464,8 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
           onPlotDrawn?.(finalCoords);
         }
       }, Cesium.ScreenSpaceEventType.LEFT_DOUBLE_CLICK);
-    }, [clearPlotInternal, onDrawingChange, onPlotDrawn, setPlotPolygonInternal, stopDrawing]);
+    }, [clearPlotInternal, onDrawingChange, onPlotDrawn, setPlotPolygonInternal, stopDrawing, stopPlacing]);
 
-    // Finish drawing manually
     const finishDrawingPlotInternal = useCallback(() => {
       if (activePointsRef.current.length >= 3) {
         const finalCoords = [...activePointsRef.current];
@@ -365,11 +505,46 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
           });
         }
       },
+      setCameraView: (mode: "2d" | "3d", targetLng?: number, targetLat?: number) => {
+        const viewer = viewerRef.current;
+        const Cesium = (window as any).Cesium;
+        if (!viewer || !Cesium) return;
+
+        const cLon = targetLng ?? lastPlotCenterRef.current?.[0] ?? 74.3587;
+        const cLat = targetLat ?? lastPlotCenterRef.current?.[1] ?? 31.5204;
+
+        if (mode === "2d") {
+          // Orthographic top-down CAD view
+          viewer.camera.flyTo({
+            destination: Cesium.Cartesian3.fromDegrees(cLon, cLat, 160),
+            orientation: {
+              heading: Cesium.Math.toRadians(0),
+              pitch: Cesium.Math.toRadians(-90),
+              roll: 0,
+            },
+            duration: 1.5,
+          });
+        } else {
+          // 3D architectural perspective view
+          viewer.camera.flyTo({
+            destination: Cesium.Cartesian3.fromDegrees(cLon, cLat, 80),
+            orientation: {
+              heading: Cesium.Math.toRadians(25),
+              pitch: Cesium.Math.toRadians(-30),
+              roll: 0,
+            },
+            duration: 1.5,
+          });
+        }
+      },
+      setMapStyle: setMapStyleInternal,
       setPlotPolygon: setPlotPolygonInternal,
       clearPlot: clearPlotInternal,
       startDrawingPlot: startDrawingPlotInternal,
       finishDrawingPlot: finishDrawingPlotInternal,
       cancelDrawingPlot: stopDrawing,
+      startPlotPlacement: startPlotPlacementInternal,
+      cancelPlotPlacement: stopPlacing,
       loadGlbModel: loadGlbModelInternal,
       clearModel: clearModelInternal,
       toggleOrbit: (enabled?: boolean) => {
@@ -417,16 +592,16 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
 
           if (!containerRef.current) return;
 
-          // Provide high-resolution satellite basemap (ESRI World Imagery)
+          // Default: High-definition Google Hybrid Satellite (crystal clear, high zoom)
           let baseLayer: any = undefined;
           try {
-            const esriImagery = await Cesium.ArcGisMapServerImageryProvider.fromUrl(
-              "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer",
-              { enablePickFeatures: false }
-            );
-            baseLayer = new Cesium.ImageryLayer(esriImagery);
-          } catch (esriErr) {
-            console.warn("Could not load ESRI imagery, using OSM fallback:", esriErr);
+            const googleProvider = new Cesium.UrlTemplateImageryProvider({
+              url: "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
+              maximumLevel: 21,
+            });
+            baseLayer = new Cesium.ImageryLayer(googleProvider);
+          } catch (e) {
+            console.warn("Using OSM fallback:", e);
             try {
               const osm = new Cesium.OpenStreetMapImageryProvider({
                 url: "https://tile.openstreetmap.org/",
@@ -456,7 +631,6 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
             viewerOptions.baseLayer = baseLayer;
           }
 
-          // If a real valid token is supplied, enable World Terrain & OSM Buildings
           if (hasValidToken) {
             try {
               viewerOptions.terrain = Cesium.Terrain.fromWorldTerrain();
@@ -465,6 +639,12 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
 
           viewer = new Cesium.Viewer(containerRef.current, viewerOptions);
           viewerRef.current = viewer;
+
+          // Razor-sharp clarity settings for high-DPI displays & satellite zoom
+          viewer.resolutionScale = Math.min(window.devicePixelRatio || 1.0, 2.0);
+          viewer.scene.globe.maximumScreenSpaceError = 1.33; // Load higher detail tiles earlier
+          viewer.scene.globe.tileCacheSize = 250;
+          viewer.scene.postProcessStages.fxaa.enabled = true; // Smooth anti-aliasing
 
           if (hasValidToken) {
             try {
@@ -477,7 +657,7 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
 
           // Initial flight to Lahore, Pakistan
           viewer.camera.flyTo({
-            destination: Cesium.Cartesian3.fromDegrees(74.3587, 31.5204, 3500),
+            destination: Cesium.Cartesian3.fromDegrees(74.3587, 31.5204, 3000),
             orientation: {
               heading: Cesium.Math.toRadians(0),
               pitch: Cesium.Math.toRadians(-45),
@@ -503,6 +683,7 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
 
       return () => {
         stopDrawing();
+        stopPlacing();
         clearModelInternal();
         if (viewer && !viewer.isDestroyed()) {
           viewer.destroy();
@@ -510,6 +691,7 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
         viewerRef.current = null;
       };
     }, [ionToken]); // eslint-disable-line react-hooks/exhaustive-deps
+
 
     return (
       <div className={`cesium-globe-container ${className || ""}`}>
@@ -524,6 +706,48 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
             <div className="cesium-error-icon">⚠️</div>
             <h3>Globe Error</h3>
             <p>{error}</p>
+          </div>
+        )}
+
+        {/* In-Globe Placement Status Banner */}
+        {isPlacing && (
+          <div
+            style={{
+              position: "absolute",
+              top: "20px",
+              left: "50%",
+              transform: "translateX(-50%)",
+              zIndex: 350,
+              background: "rgba(17, 24, 39, 0.92)",
+              backdropFilter: "blur(16px)",
+              border: "1px solid rgba(56, 189, 248, 0.4)",
+              borderRadius: "12px",
+              padding: "10px 20px",
+              display: "flex",
+              alignItems: "center",
+              gap: "14px",
+              boxShadow: "0 8px 32px rgba(0, 0, 0, 0.6)",
+              color: "#f1f5f9",
+              fontSize: "0.85rem",
+            }}
+          >
+            <span>
+              📍 <strong>Click anywhere on the map</strong> to place your plot
+            </span>
+            <button
+              onClick={stopPlacing}
+              style={{
+                background: "#ef4444",
+                color: "white",
+                border: "none",
+                borderRadius: "6px",
+                padding: "4px 10px",
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              Cancel
+            </button>
           </div>
         )}
 
@@ -587,7 +811,7 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
         <div
           ref={containerRef}
           className="cesium-viewer-container"
-          style={{ cursor: isDrawing ? "crosshair" : "default" }}
+          style={{ cursor: isDrawing || isPlacing ? "crosshair" : "default" }}
         />
       </div>
     );
