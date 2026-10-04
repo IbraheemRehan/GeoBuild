@@ -1204,6 +1204,149 @@ nextjs-portal,
   opacity: 0.2 !important;
 }
 
+/* ===== Drawn Plot Sidebar Card ===== */
+.drawn-plot-sidebar-card {
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin: 10px 14px 2px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 16px rgba(245, 158, 11, 0.15);
+  animation: slideDownFade 0.25s ease-out;
+  flex-shrink: 0;
+}
+
+@keyframes slideDownFade {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.drawn-plot-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.drawn-plot-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.drawn-plot-icon {
+  font-size: 1.15rem;
+}
+
+.drawn-plot-title {
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #fbbf24;
+}
+
+.drawn-plot-stats {
+  font-size: 0.7rem;
+  color: #cbd5e1;
+}
+
+.drawn-plot-focus-btn {
+  background: rgba(56, 189, 248, 0.18);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  color: #38bdf8;
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.drawn-plot-focus-btn:hover {
+  background: rgba(56, 189, 248, 0.3);
+}
+
+.drawn-plot-clear-btn {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #f87171;
+  border-radius: 6px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 0.72rem;
+  transition: all var(--transition-fast);
+}
+
+.drawn-plot-clear-btn:hover {
+  background: rgba(239, 68, 68, 0.3);
+}
+
+.drawn-plot-generate-btn {
+  width: 100%;
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  border: none;
+  border-radius: 8px;
+  color: #000000;
+  font-weight: 700;
+  font-size: 0.8rem;
+  padding: 8px 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-shadow: 0 4px 14px rgba(245, 158, 11, 0.35);
+  transition: all var(--transition-fast);
+}
+
+.drawn-plot-generate-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(245, 158, 11, 0.5);
+}
+
+.drawn-plot-generate-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.drawn-plot-prompts-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #94a3b8;
+}
+
+.drawn-plot-quick-pills {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.drawn-plot-pill {
+  background: rgba(30, 41, 59, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  color: #cbd5e1;
+  font-size: 0.7rem;
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.drawn-plot-pill:hover {
+  background: rgba(245, 158, 11, 0.2);
+  border-color: #fbbf24;
+  color: #ffffff;
+}
+
 /* ===== Custom Scrollbars ===== */
 ::-webkit-scrollbar {
   width: 5px;

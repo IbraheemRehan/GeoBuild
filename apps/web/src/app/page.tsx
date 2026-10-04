@@ -211,9 +211,9 @@ export default function HomePage() {
 
       const label = `${preset === "5marla" ? "5 Marla" : preset === "10marla" ? "10 Marla" : preset === "1kanal" ? "1 Kanal" : "2 Kanal"} Plot`;
       globeRef.current?.setPlotPolygon(coords, label);
-      globeRef.current?.setCameraView(cameraMode, plotCenter[0], plotCenter[1]);
+      // Maintained user's camera viewpoint without jarring reset
     },
-    [plotCenter, plotRotation, cameraMode]
+    [plotCenter, plotRotation]
   );
 
   // Auto-initialize 5 Marla plot once globe is ready if no plot exists yet
@@ -258,9 +258,9 @@ export default function HomePage() {
 
       const label = `${preset === "5marla" ? "5 Marla" : preset === "10marla" ? "10 Marla" : "1 Kanal"} Plot`;
       globeRef.current?.setPlotPolygon(coords, label);
-      globeRef.current?.setCameraView(cameraMode, lng, lat);
+      // Placed right where user clicked without moving camera away
     });
-  }, [selectedPreset, plotRotation, cameraMode]);
+  }, [selectedPreset, plotRotation]);
 
   // Custom plot drawn on map
   const handlePlotDrawn = useCallback((coords: [number, number][]) => {
@@ -289,7 +289,20 @@ export default function HomePage() {
     }
     areaSqm = Math.abs(areaSqm) / 2;
     const marla = areaSqm / 25.2929;
-    setPlotMarla(roundTo(marla, 1));
+    const roundedMarla = roundTo(marla, 1);
+    setPlotMarla(roundedMarla);
+
+    // 1. Automatically expand AI Architect Copilot drawer so user sees it right away
+    setIsSidebarCollapsed(false);
+    setActiveTab("chat");
+
+    // 2. Prefill prompt input ready to submit
+    setInputValue(
+      `Design a modern 2-storey house on this custom ${roundedMarla} marla plot with 4 bedrooms, rooftop terrace, and contemporary Pakistani facade`
+    );
+
+    // 3. Smoothly frame the drawn plot in Cesium without reloading
+    globeRef.current?.focusPlot(coords);
   }, []);
 
   // Clear plot and model
@@ -355,8 +368,9 @@ export default function HomePage() {
             presetKey = "1kanal";
           }
 
-          const cityCoords = CITIES[selectedCity];
-          activePlot = createOrientedPlotCoordinates(cityCoords.lng, cityCoords.lat, presetKey, plotRotation);
+          // Use plotCenter (where user is currently looking) instead of jumping back to city origin
+          const targetCenter = plotCenter || [CITIES[selectedCity].lng, CITIES[selectedCity].lat];
+          activePlot = createOrientedPlotCoordinates(targetCenter[0], targetCenter[1], presetKey, plotRotation);
           setCurrentPlot(activePlot);
           setSelectedPreset(presetKey);
           const label = `${presetKey === "5marla" ? "5 Marla" : presetKey === "10marla" ? "10 Marla" : "1 Kanal"} Plot`;
@@ -558,6 +572,87 @@ export default function HomePage() {
         {/* Tab 1: Architecture Chat & Suggestions */}
         {activeTab === "chat" && (
           <>
+            {/* Custom Drawn Plot Banner in Sidebar */}
+            {selectedPreset === "custom" && currentPlot && currentPlot.length >= 3 && (
+              <div className="drawn-plot-sidebar-card">
+                <div className="drawn-plot-header">
+                  <div className="drawn-plot-title-wrap">
+                    <span className="drawn-plot-icon">✏️</span>
+                    <div>
+                      <div className="drawn-plot-title">Custom Drawn Plot Active</div>
+                      <div className="drawn-plot-stats">
+                        {plotMarla || "—"} Marla • {currentPlot.length} Corners • {CITIES[selectedCity].label}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: "4px" }}>
+                    <button
+                      onClick={() => globeRef.current?.focusPlot(currentPlot)}
+                      className="drawn-plot-focus-btn"
+                      title="Frame drawn plot in view"
+                    >
+                      🎯 Frame
+                    </button>
+                    <button
+                      onClick={handleClearPlot}
+                      className="drawn-plot-clear-btn"
+                      title="Clear drawn plot"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  className="drawn-plot-generate-btn"
+                  onClick={() =>
+                    handleSend(
+                      inputValue.trim() ||
+                        `Design a modern 2-storey house on this custom ${plotMarla} marla plot with 4 bedrooms, rooftop terrace, and contemporary Pakistani facade`
+                    )
+                  }
+                  disabled={isProcessing}
+                  title="Generate 3D building on this custom drawn plot"
+                >
+                  <span>⚡ Generate 3D Building on this Plot</span>
+                </button>
+
+                <div className="drawn-plot-prompts-label">Quick Pakistani Architectural Prompts:</div>
+                <div className="drawn-plot-quick-pills">
+                  <button
+                    className="drawn-plot-pill"
+                    onClick={() =>
+                      handleSend(
+                        `Design a modern 2-storey house on this custom ${plotMarla} marla plot with 4 bedrooms, rooftop terrace, and contemporary Pakistani facade`
+                      )
+                    }
+                  >
+                    🏠 2-Storey Modern
+                  </button>
+                  <button
+                    className="drawn-plot-pill"
+                    onClick={() =>
+                      handleSend(
+                        `Luxury ${plotMarla} marla villa on this drawn plot with 5 bedrooms, covered parking, traditional jali screens, and balcony`
+                      )
+                    }
+                  >
+                    🏰 Luxury Villa
+                  </button>
+                  <button
+                    className="drawn-plot-pill"
+                    onClick={() =>
+                      handleSend(
+                        `${plotMarla} marla ka 2 manzil ghar, 3 kamre, covered car porch, drawing room`
+                      )
+                    }
+                  >
+                    🇵🇰 2 Manzil Ghar (اردو)
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="chat-stream-container">
               {messages.length === 0 ? (
                 <div className="welcome-screen">

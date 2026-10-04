@@ -43,6 +43,7 @@ export interface CesiumGlobeRef {
   clearModel: () => void;
   toggleOrbit: (enabled?: boolean) => void;
   toggleShadows: () => boolean;
+  focusPlot: (coords?: [number, number][]) => void;
 }
 
 interface CesiumGlobeProps {
@@ -361,14 +362,16 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
 
         modelEntityRef.current = modelEntity;
 
-        // Fly camera directly to 3D perspective of building
-        viewer.flyTo(modelEntity, {
+        // Smoothly fly camera to 3D perspective of building target (ground anchored)
+        const targetCartesian = Cesium.Cartesian3.fromDegrees(center[0], center[1], 0.0);
+        const sphere = new Cesium.BoundingSphere(targetCartesian, 25.0);
+        viewer.camera.flyToBoundingSphere(sphere, {
           offset: new Cesium.HeadingPitchRange(
-            Cesium.Math.toRadians(28),
-            Cesium.Math.toRadians(-26),
-            55.0
+            Cesium.Math.toRadians((headingDeg || 0) + 25),
+            Cesium.Math.toRadians(-28),
+            70.0
           ),
-          duration: 2.2,
+          duration: 2.0,
         });
       },
       [clearModelInternal]
@@ -469,8 +472,24 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
         if (activePointsRef.current.length >= 3) {
           const finalCoords = [...activePointsRef.current];
           stopDrawing();
-          setPlotPolygonInternal(finalCoords, "Custom Plot");
+          setPlotPolygonInternal(finalCoords, "Custom Drawn Plot");
           onPlotDrawn?.(finalCoords);
+
+          // Gently frame the completed drawn plot without changing view orientation
+          const sumX = finalCoords.reduce((acc, c) => acc + c[0], 0);
+          const sumY = finalCoords.reduce((acc, c) => acc + c[1], 0);
+          const cLon = sumX / finalCoords.length;
+          const cLat = sumY / finalCoords.length;
+          const target = Cesium.Cartesian3.fromDegrees(cLon, cLat, 0);
+          const sphere = new Cesium.BoundingSphere(target, 35);
+          viewer.camera.flyToBoundingSphere(sphere, {
+            offset: new Cesium.HeadingPitchRange(
+              viewer.camera.heading,
+              Math.min(viewer.camera.pitch, Cesium.Math.toRadians(-35)),
+              90.0
+            ),
+            duration: 1.2,
+          });
         }
       }, Cesium.ScreenSpaceEventType.LEFT_DOUBLE_CLICK);
     }, [clearPlotInternal, onDrawingChange, onPlotDrawn, setPlotPolygonInternal, stopDrawing, stopPlacing]);
@@ -478,9 +497,28 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
     const finishDrawingPlotInternal = useCallback(() => {
       if (activePointsRef.current.length >= 3) {
         const finalCoords = [...activePointsRef.current];
+        const viewer = viewerRef.current;
+        const Cesium = (window as any).Cesium;
         stopDrawing();
-        setPlotPolygonInternal(finalCoords, "Custom Plot");
+        setPlotPolygonInternal(finalCoords, "Custom Drawn Plot");
         onPlotDrawn?.(finalCoords);
+
+        if (viewer && Cesium) {
+          const sumX = finalCoords.reduce((acc, c) => acc + c[0], 0);
+          const sumY = finalCoords.reduce((acc, c) => acc + c[1], 0);
+          const cLon = sumX / finalCoords.length;
+          const cLat = sumY / finalCoords.length;
+          const target = Cesium.Cartesian3.fromDegrees(cLon, cLat, 0);
+          const sphere = new Cesium.BoundingSphere(target, 35);
+          viewer.camera.flyToBoundingSphere(sphere, {
+            offset: new Cesium.HeadingPitchRange(
+              viewer.camera.heading,
+              Math.min(viewer.camera.pitch, Cesium.Math.toRadians(-35)),
+              90.0
+            ),
+            duration: 1.2,
+          });
+        }
       }
     }, [onPlotDrawn, setPlotPolygonInternal, stopDrawing]);
 
@@ -502,17 +540,50 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
         }
       },
       flyToBuilding: () => {
-        if (viewerRef.current && modelEntityRef.current) {
-          const Cesium = (window as any).Cesium;
-          viewerRef.current.flyTo(modelEntityRef.current, {
+        const viewer = viewerRef.current;
+        const Cesium = (window as any).Cesium;
+        if (!viewer || !Cesium) return;
+        const center = lastPlotCenterRef.current;
+        if (center) {
+          const target = Cesium.Cartesian3.fromDegrees(center[0], center[1], 0);
+          const sphere = new Cesium.BoundingSphere(target, 25);
+          viewer.camera.flyToBoundingSphere(sphere, {
             offset: new Cesium.HeadingPitchRange(
               Cesium.Math.toRadians(25),
               Cesium.Math.toRadians(-28),
-              55.0
+              70.0
             ),
             duration: 1.5,
           });
+        } else if (modelEntityRef.current) {
+          viewer.flyTo(modelEntityRef.current);
         }
+      },
+      focusPlot: (coords?: [number, number][]) => {
+        const viewer = viewerRef.current;
+        const Cesium = (window as any).Cesium;
+        if (!viewer || !Cesium) return;
+        const pts = coords || (lastPlotCenterRef.current ? [lastPlotCenterRef.current] : null);
+        if (!pts || pts.length === 0) return;
+        let cLon = 0;
+        let cLat = 0;
+        if (pts.length === 1) {
+          cLon = pts[0][0];
+          cLat = pts[0][1];
+        } else {
+          cLon = pts.reduce((a, b) => a + b[0], 0) / pts.length;
+          cLat = pts.reduce((a, b) => a + b[1], 0) / pts.length;
+        }
+        const target = Cesium.Cartesian3.fromDegrees(cLon, cLat, 0);
+        const sphere = new Cesium.BoundingSphere(target, 35);
+        viewer.camera.flyToBoundingSphere(sphere, {
+          offset: new Cesium.HeadingPitchRange(
+            viewer.camera.heading,
+            Cesium.Math.toRadians(-45),
+            85.0
+          ),
+          duration: 1.2,
+        });
       },
       zoomIn: () => {
         const viewer = viewerRef.current;
