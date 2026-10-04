@@ -69,12 +69,12 @@ export default function PlotSelector({
         </span>
 
         {/* 2D / 3D Toggle */}
-        <div style={{ display: "flex", background: "rgba(30, 41, 59, 0.7)", borderRadius: "6px", padding: "2px" }}>
+        <div style={{ display: "flex", background: "var(--color-surface)", border: "1px solid var(--color-surface-border)", borderRadius: "6px", padding: "2px" }}>
           <button
             onClick={() => onToggleCameraMode("2d")}
             style={{
-              background: cameraMode === "2d" ? "#38bdf8" : "transparent",
-              color: cameraMode === "2d" ? "#0f172a" : "#94a3b8",
+              background: cameraMode === "2d" ? "var(--color-text-primary)" : "transparent",
+              color: cameraMode === "2d" ? "var(--color-bg-primary)" : "var(--color-text-secondary)",
               border: "none",
               borderRadius: "4px",
               padding: "2px 8px",
@@ -89,8 +89,8 @@ export default function PlotSelector({
           <button
             onClick={() => onToggleCameraMode("3d")}
             style={{
-              background: cameraMode === "3d" ? "#6366f1" : "transparent",
-              color: cameraMode === "3d" ? "#ffffff" : "#94a3b8",
+              background: cameraMode === "3d" ? "var(--color-text-primary)" : "transparent",
+              color: cameraMode === "3d" ? "var(--color-bg-primary)" : "var(--color-text-secondary)",
               border: "none",
               borderRadius: "4px",
               padding: "2px 8px",
@@ -122,11 +122,11 @@ export default function PlotSelector({
               key={m.id}
               onClick={() => onSelectMapStyle(m.id)}
               style={{
-                background: active ? "rgba(99, 102, 241, 0.25)" : "rgba(30, 41, 59, 0.6)",
-                border: `1px solid ${active ? "#818cf8" : "rgba(255, 255, 255, 0.06)"}`,
+                background: active ? "var(--color-text-primary)" : "var(--color-surface)",
+                border: `1px solid ${active ? "var(--color-text-primary)" : "var(--color-surface-border)"}`,
                 borderRadius: "6px",
                 padding: "4px 2px",
-                color: active ? "#ffffff" : "#94a3b8",
+                color: active ? "var(--color-bg-primary)" : "var(--color-text-secondary)",
                 fontSize: "0.68rem",
                 fontWeight: 600,
                 cursor: "pointer",
@@ -144,21 +144,21 @@ export default function PlotSelector({
         })}
       </div>
 
-      <div style={{ height: "1px", background: "rgba(255, 255, 255, 0.06)" }} />
+      <div style={{ height: "1px", background: "var(--color-surface-border)" }} />
 
       {/* Plot Boundary Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
           <span style={{ fontSize: "1rem" }}>📐</span>
-          <span style={{ fontSize: "0.8rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "#cbd5e1" }}>
+          <span style={{ fontSize: "0.8rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--color-text-primary)" }}>
             Plot Boundary
           </span>
           {hasPlot && (
             <span
               style={{
-                background: "rgba(56, 189, 248, 0.2)",
-                color: "#38bdf8",
-                border: "1px solid rgba(56, 189, 248, 0.4)",
+                background: "var(--color-surface-hover)",
+                color: "var(--color-text-primary)",
+                border: "1px solid var(--color-surface-border)",
                 padding: "1px 6px",
                 borderRadius: "4px",
                 fontSize: "0.7rem",
@@ -176,7 +176,7 @@ export default function PlotSelector({
             style={{
               background: "transparent",
               border: "none",
-              color: "#94a3b8",
+              color: "var(--color-text-muted)",
               cursor: "pointer",
               fontSize: "0.75rem",
               textDecoration: "underline",
@@ -196,11 +196,11 @@ export default function PlotSelector({
               key={p.key}
               onClick={() => onSelectPreset(p.key)}
               style={{
-                background: isSelected ? "linear-gradient(135deg, #6366f1, #8b5cf6)" : "rgba(30, 41, 59, 0.7)",
-                border: `1px solid ${isSelected ? "#818cf8" : "rgba(255, 255, 255, 0.08)"}`,
+                background: isSelected ? "var(--color-text-primary)" : "var(--color-surface)",
+                border: `1px solid ${isSelected ? "var(--color-text-primary)" : "var(--color-surface-border)"}`,
                 borderRadius: "8px",
                 padding: "6px 8px",
-                color: isSelected ? "#ffffff" : "#cbd5e1",
+                color: isSelected ? "var(--color-bg-primary)" : "var(--color-text-primary)",
                 cursor: "pointer",
                 textAlign: "left",
                 display: "flex",
@@ -210,9 +210,9 @@ export default function PlotSelector({
             >
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
                 <span style={{ fontSize: "0.8rem", fontWeight: 700 }}>{p.label}</span>
-                <span style={{ fontSize: "0.65rem", color: isSelected ? "#e0e7ff" : "#64748b" }}>{p.desc}</span>
+                <span style={{ fontSize: "0.65rem", opacity: 0.8 }}>{p.desc}</span>
               </div>
-              <span style={{ fontSize: "0.65rem", color: isSelected ? "rgba(255, 255, 255, 0.85)" : "#94a3b8" }}>
+              <span style={{ fontSize: "0.65rem", opacity: 0.75 }}>
                 {p.dims}
               </span>
             </button>
@@ -225,11 +225,11 @@ export default function PlotSelector({
         <button
           onClick={onStartPlacement}
           style={{
-            background: isPlacing ? "#0284c7" : "rgba(30, 41, 59, 0.9)",
-            border: `1px solid ${isPlacing ? "#38bdf8" : "rgba(255, 255, 255, 0.12)"}`,
+            background: isPlacing ? "var(--color-text-primary)" : "var(--color-surface)",
+            border: `1px solid ${isPlacing ? "var(--color-text-primary)" : "var(--color-surface-border)"}`,
             borderRadius: "8px",
             padding: "7px 8px",
-            color: isPlacing ? "#ffffff" : "#f1f5f9",
+            color: isPlacing ? "var(--color-bg-primary)" : "var(--color-text-primary)",
             fontWeight: 600,
             fontSize: "0.75rem",
             cursor: "pointer",
@@ -237,6 +237,7 @@ export default function PlotSelector({
             alignItems: "center",
             justifyContent: "center",
             gap: "5px",
+            transition: "all 0.15s ease",
           }}
           title="Click anywhere on the map to place this plot"
         >
@@ -247,11 +248,11 @@ export default function PlotSelector({
         <button
           onClick={onStartDrawing}
           style={{
-            background: isDrawing ? "#f59e0b" : "rgba(30, 41, 59, 0.9)",
-            border: `1px solid ${isDrawing ? "#fbbf24" : "rgba(255, 255, 255, 0.12)"}`,
+            background: isDrawing ? "#f59e0b" : "var(--color-surface)",
+            border: `1px solid ${isDrawing ? "#fbbf24" : "var(--color-surface-border)"}`,
             borderRadius: "8px",
             padding: "7px 8px",
-            color: isDrawing ? "#000000" : "#f1f5f9",
+            color: isDrawing ? "#000000" : "var(--color-text-primary)",
             fontWeight: 600,
             fontSize: "0.75rem",
             cursor: "pointer",
@@ -259,6 +260,7 @@ export default function PlotSelector({
             alignItems: "center",
             justifyContent: "center",
             gap: "5px",
+            transition: "all 0.15s ease",
           }}
           title="Click multiple points to draw custom polygon boundary"
         >
@@ -271,8 +273,8 @@ export default function PlotSelector({
       {hasPlot && (
         <div
           style={{
-            background: "rgba(15, 23, 42, 0.6)",
-            border: "1px solid rgba(255, 255, 255, 0.05)",
+            background: "var(--color-surface)",
+            border: "1px solid var(--color-surface-border)",
             borderRadius: "8px",
             padding: "8px 10px",
             display: "flex",
@@ -281,10 +283,10 @@ export default function PlotSelector({
           }}
         >
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: "0.7rem", color: "#94a3b8", fontWeight: 600 }}>
+            <span style={{ fontSize: "0.7rem", color: "var(--color-text-secondary)", fontWeight: 600 }}>
               Street Alignment (Rotate)
             </span>
-            <span style={{ fontSize: "0.7rem", color: "#38bdf8", fontWeight: 700 }}>
+            <span style={{ fontSize: "0.7rem", color: "var(--color-text-primary)", fontWeight: 700 }}>
               {Math.round(plotRotation)}°
             </span>
           </div>
@@ -293,9 +295,9 @@ export default function PlotSelector({
             <button
               onClick={() => onRotatePlot((plotRotation - 15 + 360) % 360)}
               style={{
-                background: "rgba(30, 41, 59, 0.8)",
-                border: "1px solid rgba(255, 255, 255, 0.1)",
-                color: "#cbd5e1",
+                background: "var(--color-surface-hover)",
+                border: "1px solid var(--color-surface-border)",
+                color: "var(--color-text-primary)",
                 borderRadius: "4px",
                 padding: "2px 6px",
                 fontSize: "0.7rem",
@@ -314,7 +316,7 @@ export default function PlotSelector({
               onChange={(e) => onRotatePlot(Number(e.target.value))}
               style={{
                 flex: 1,
-                accentColor: "#6366f1",
+                accentColor: "var(--color-text-primary)",
                 cursor: "pointer",
                 height: "4px",
               }}
@@ -323,9 +325,9 @@ export default function PlotSelector({
             <button
               onClick={() => onRotatePlot((plotRotation + 15) % 360)}
               style={{
-                background: "rgba(30, 41, 59, 0.8)",
-                border: "1px solid rgba(255, 255, 255, 0.1)",
-                color: "#cbd5e1",
+                background: "var(--color-surface-hover)",
+                border: "1px solid var(--color-surface-border)",
+                color: "var(--color-text-primary)",
                 borderRadius: "4px",
                 padding: "2px 6px",
                 fontSize: "0.7rem",
@@ -338,7 +340,7 @@ export default function PlotSelector({
           </div>
 
           {currentPresetData && (
-            <div style={{ fontSize: "0.68rem", color: "#64748b", marginTop: "2px" }}>
+            <div style={{ fontSize: "0.68rem", color: "var(--color-text-muted)", marginTop: "2px" }}>
               📐 Dimensions: {currentPresetData.dims}
             </div>
           )}

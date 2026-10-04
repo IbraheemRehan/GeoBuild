@@ -132,8 +132,8 @@ export default function TopNavBar({
               />
               <defs>
                 <linearGradient id="brandGrad" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
-                  <stop stopColor="#38bdf8" />
-                  <stop offset="1" stopColor="#818cf8" />
+                  <stop stopColor="#ffffff" />
+                  <stop offset="1" stopColor="#a1a1aa" />
                 </linearGradient>
               </defs>
             </svg>
@@ -280,9 +280,9 @@ export default function TopNavBar({
         <button
           onClick={onToggleTheme}
           className="theme-toggle-btn"
-          title={`Switch to ${theme === "dark" ? "Light (White) Mode" : "Dark (Black) Mode"}`}
+          title={`Switch to ${theme === "dark" ? "White Mode" : "Black Mode"}`}
         >
-          <span>{theme === "dark" ? "☀️ Light" : "🌙 Dark"}</span>
+          <span>{theme === "dark" ? "⚪ White Mode" : "⚫ Black Mode"}</span>
         </button>
 
         {/* Basemap Switcher Dropdown */}

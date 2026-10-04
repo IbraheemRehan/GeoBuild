@@ -51,10 +51,10 @@ export default function BuildingAnalysisHUD({
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", width: "100%" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <span style={{ fontSize: "1.1rem" }}>🏗️</span>
-            <span style={{ fontWeight: 700, fontSize: "0.82rem" }}>
+            <span style={{ fontWeight: 700, fontSize: "0.82rem", color: "var(--color-text-primary)" }}>
               {spec?.floors || 2}-Storey • {generate.plot_area_marla ? Number(generate.plot_area_marla).toFixed(1) : 5} Marla
             </span>
-            <span style={{ color: "var(--color-accent-light)", fontWeight: 700, fontSize: "0.8rem", marginLeft: "4px" }}>
+            <span style={{ color: "#fbbf24", fontWeight: 700, fontSize: "0.8rem", marginLeft: "4px" }}>
               {formatPKR(cost?.total || 7500000)}
             </span>
           </div>
@@ -71,7 +71,7 @@ export default function BuildingAnalysisHUD({
             <button
               onClick={() => setIsMinimized(false)}
               className="plot-action-btn"
-              style={{ padding: "3px 8px", fontSize: "0.72rem", background: "rgba(56, 189, 248, 0.2)", borderColor: "#38bdf8" }}
+              style={{ padding: "3px 8px", fontSize: "0.72rem", background: "var(--color-surface)", borderColor: "var(--color-surface-border)" }}
               title="Expand Full BIM Analysis"
             >
               ▲ Expand
@@ -101,7 +101,7 @@ export default function BuildingAnalysisHUD({
           justifyContent: "space-between",
           alignItems: "center",
           marginBottom: "12px",
-          borderBottom: "1px solid rgba(255, 255, 255, 0.08)",
+          borderBottom: "1px solid var(--color-surface-border)",
           paddingBottom: "8px",
           flexWrap: "wrap",
           gap: "8px",
@@ -110,7 +110,7 @@ export default function BuildingAnalysisHUD({
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
           <span style={{ fontSize: "1.2rem" }}>🏗️</span>
           <div>
-            <h3 style={{ margin: 0, fontSize: "0.95rem", fontWeight: 700, letterSpacing: "-0.01em" }}>
+            <h3 style={{ margin: 0, fontSize: "0.95rem", fontWeight: 700, letterSpacing: "-0.01em", color: "var(--color-text-primary)" }}>
               {spec?.floors || 2}-Storey Building • {generate.plot_area_marla ? Number(generate.plot_area_marla).toFixed(1) : 5} Marla
             </h3>
             <p style={{ margin: 0, fontSize: "0.72rem", color: "var(--color-text-secondary)" }}>
@@ -120,19 +120,19 @@ export default function BuildingAnalysisHUD({
         </div>
 
         {/* Tab Buttons */}
-        <div style={{ display: "flex", gap: "4px", background: "rgba(30, 41, 59, 0.6)", padding: "3px", borderRadius: "8px" }}>
+        <div style={{ display: "flex", gap: "4px", background: "var(--color-surface-hover)", padding: "3px", borderRadius: "8px", border: "1px solid var(--color-surface-border)" }}>
           {(["overview", "costs", "compliance"] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
               style={{
-                background: activeTab === tab ? "linear-gradient(135deg, #0284c7, #2563eb)" : "transparent",
-                color: activeTab === tab ? "#ffffff" : "var(--color-text-secondary)",
+                background: activeTab === tab ? "var(--color-text-primary)" : "transparent",
+                color: activeTab === tab ? "var(--color-bg-primary)" : "var(--color-text-secondary)",
                 border: "none",
                 borderRadius: "6px",
                 padding: "4px 10px",
                 fontSize: "0.72rem",
-                fontWeight: 600,
+                fontWeight: 700,
                 textTransform: "capitalize",
                 cursor: "pointer",
                 transition: "all 0.15s ease",
@@ -149,9 +149,9 @@ export default function BuildingAnalysisHUD({
             onClick={onFocusBuilding}
             title="Focus camera on 3D building"
             style={{
-              background: "rgba(56, 189, 248, 0.18)",
-              border: "1px solid rgba(56, 189, 248, 0.4)",
-              color: "#38bdf8",
+              background: "var(--color-surface)",
+              border: "1px solid var(--color-surface-border)",
+              color: "var(--color-text-primary)",
               borderRadius: "7px",
               padding: "4px 9px",
               fontSize: "0.72rem",
@@ -169,8 +169,8 @@ export default function BuildingAnalysisHUD({
             onClick={onToggleOrbit}
             title="Toggle 360 cinematic orbit"
             style={{
-              background: isOrbiting ? "#10b981" : "rgba(30, 41, 59, 0.7)",
-              border: `1px solid ${isOrbiting ? "#10b981" : "rgba(255, 255, 255, 0.1)"}`,
+              background: isOrbiting ? "#10b981" : "var(--color-surface)",
+              border: `1px solid ${isOrbiting ? "#10b981" : "var(--color-surface-border)"}`,
               color: "white",
               borderRadius: "7px",
               padding: "4px 9px",
@@ -189,8 +189,8 @@ export default function BuildingAnalysisHUD({
             onClick={onToggleShadows}
             title="Toggle sun shadows"
             style={{
-              background: "rgba(30, 41, 59, 0.7)",
-              border: "1px solid rgba(255, 255, 255, 0.1)",
+              background: "var(--color-surface)",
+              border: "1px solid var(--color-surface-border)",
               color: "#fbbf24",
               borderRadius: "7px",
               padding: "4px 8px",
@@ -205,8 +205,8 @@ export default function BuildingAnalysisHUD({
             onClick={() => setIsMinimized(true)}
             title="Minimize HUD"
             style={{
-              background: "rgba(30, 41, 59, 0.7)",
-              border: "1px solid rgba(255, 255, 255, 0.1)",
+              background: "var(--color-surface)",
+              border: "1px solid var(--color-surface-border)",
               color: "var(--color-text-secondary)",
               borderRadius: "7px",
               padding: "4px 8px",
@@ -240,7 +240,7 @@ export default function BuildingAnalysisHUD({
       {/* Tab 1: Overview */}
       {activeTab === "overview" && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: "8px" }}>
-          <div style={{ background: "rgba(30, 41, 59, 0.5)", padding: "8px 12px", borderRadius: "10px", border: "1px solid rgba(255, 255, 255, 0.05)" }}>
+          <div style={{ background: "var(--color-surface)", padding: "8px 12px", borderRadius: "10px", border: "1px solid var(--color-surface-border)" }}>
             <span style={{ fontSize: "0.68rem", color: "var(--color-text-secondary)", textTransform: "uppercase", fontWeight: 700 }}>Ground Coverage</span>
             <div style={{ fontSize: "1.05rem", fontWeight: 800, color: coveragePct <= 80 ? "#34d399" : "#f87171" }}>
               {coveragePct}%
@@ -250,9 +250,9 @@ export default function BuildingAnalysisHUD({
             </div>
           </div>
 
-          <div style={{ background: "rgba(30, 41, 59, 0.5)", padding: "8px 12px", borderRadius: "10px", border: "1px solid rgba(255, 255, 255, 0.05)" }}>
+          <div style={{ background: "var(--color-surface)", padding: "8px 12px", borderRadius: "10px", border: "1px solid var(--color-surface-border)" }}>
             <span style={{ fontSize: "0.68rem", color: "var(--color-text-secondary)", textTransform: "uppercase", fontWeight: 700 }}>FAR Ratio</span>
-            <div style={{ fontSize: "1.05rem", fontWeight: 800, color: Number(farRatio) <= 1.6 ? "#38bdf8" : "#f87171" }}>
+            <div style={{ fontSize: "1.05rem", fontWeight: 800, color: Number(farRatio) <= 1.6 ? "var(--color-text-primary)" : "#f87171" }}>
               {Number(farRatio).toFixed(2)}
               <span style={{ fontSize: "0.68rem", color: "var(--color-text-muted)", fontWeight: 400, marginLeft: "4px" }}>
                 (Max 1.6)
@@ -260,9 +260,9 @@ export default function BuildingAnalysisHUD({
             </div>
           </div>
 
-          <div style={{ background: "rgba(30, 41, 59, 0.5)", padding: "8px 12px", borderRadius: "10px", border: "1px solid rgba(255, 255, 255, 0.05)" }}>
+          <div style={{ background: "var(--color-surface)", padding: "8px 12px", borderRadius: "10px", border: "1px solid var(--color-surface-border)" }}>
             <span style={{ fontSize: "0.68rem", color: "var(--color-text-secondary)", textTransform: "uppercase", fontWeight: 700 }}>Total Height</span>
-            <div style={{ fontSize: "1.05rem", fontWeight: 800, color: heightM <= 12 ? "#a78bfa" : "#f87171" }}>
+            <div style={{ fontSize: "1.05rem", fontWeight: 800, color: heightM <= 12 ? "var(--color-text-primary)" : "#f87171" }}>
               {heightM.toFixed(1)}m
               <span style={{ fontSize: "0.68rem", color: "var(--color-text-muted)", fontWeight: 400, marginLeft: "4px" }}>
                 ({spec?.floors || 2} Floors)
@@ -270,7 +270,7 @@ export default function BuildingAnalysisHUD({
             </div>
           </div>
 
-          <div style={{ background: "rgba(30, 41, 59, 0.5)", padding: "8px 12px", borderRadius: "10px", border: "1px solid rgba(255, 255, 255, 0.05)" }}>
+          <div style={{ background: "var(--color-surface)", padding: "8px 12px", borderRadius: "10px", border: "1px solid var(--color-surface-border)" }}>
             <span style={{ fontSize: "0.68rem", color: "var(--color-text-secondary)", textTransform: "uppercase", fontWeight: 700 }}>Est. Total Cost</span>
             <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#fbbf24" }}>
               {formatPKR(cost?.total || 7500000)}
@@ -282,23 +282,23 @@ export default function BuildingAnalysisHUD({
       {/* Tab 2: Costs */}
       {activeTab === "costs" && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "8px" }}>
-          <div style={{ background: "rgba(30, 41, 59, 0.5)", padding: "8px 12px", borderRadius: "10px" }}>
+          <div style={{ background: "var(--color-surface)", padding: "8px 12px", borderRadius: "10px", border: "1px solid var(--color-surface-border)" }}>
             <span style={{ fontSize: "0.68rem", color: "var(--color-text-secondary)", textTransform: "uppercase", fontWeight: 700 }}>Grey Structure (Civil)</span>
-            <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#cbd5e1" }}>
+            <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "var(--color-text-primary)" }}>
               {formatPKR(cost?.grey_structure || ((cost?.total || 7500000) * 0.55))}
             </div>
             <span style={{ fontSize: "0.66rem", color: "var(--color-text-muted)" }}>Structure, brickwork, plumbing rough-in</span>
           </div>
 
-          <div style={{ background: "rgba(30, 41, 59, 0.5)", padding: "8px 12px", borderRadius: "10px" }}>
+          <div style={{ background: "var(--color-surface)", padding: "8px 12px", borderRadius: "10px", border: "1px solid var(--color-surface-border)" }}>
             <span style={{ fontSize: "0.68rem", color: "var(--color-text-secondary)", textTransform: "uppercase", fontWeight: 700 }}>Finishing Works</span>
-            <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#cbd5e1" }}>
+            <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "var(--color-text-primary)" }}>
               {formatPKR(cost?.finishing || ((cost?.total || 7500000) * 0.45))}
             </div>
             <span style={{ fontSize: "0.66rem", color: "var(--color-text-muted)" }}>Tiles, woodwork, fixtures, paint</span>
           </div>
 
-          <div style={{ background: "rgba(30, 41, 59, 0.5)", padding: "8px 12px", borderRadius: "10px", border: "1px solid rgba(245, 158, 11, 0.3)" }}>
+          <div style={{ background: "var(--color-surface)", padding: "8px 12px", borderRadius: "10px", border: "1px solid rgba(245, 158, 11, 0.3)" }}>
             <span style={{ fontSize: "0.68rem", color: "#fbbf24", textTransform: "uppercase", fontWeight: 700 }}>Total Estimated (PKR)</span>
             <div style={{ fontSize: "1.1rem", fontWeight: 800, color: "#fbbf24" }}>
               {formatPKR(cost?.total || 7500000)}

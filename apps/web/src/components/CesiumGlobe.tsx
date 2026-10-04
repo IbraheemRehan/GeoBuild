@@ -207,18 +207,18 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
             hierarchy: new Cesium.PolygonHierarchy(
               Cesium.Cartesian3.fromDegreesArray(flatDegrees)
             ),
-            material: Cesium.Color.fromCssColorString("rgba(56, 189, 248, 0.3)"),
+            material: Cesium.Color.fromCssColorString("rgba(255, 255, 255, 0.22)"),
             classificationType: Cesium.ClassificationType.BOTH,
           },
         });
 
-        // 2. Glowing cyan boundary polyline (crisp line at all zoom levels)
+        // 2. Architectural monochrome boundary polyline (crisp line at all zoom levels)
         plotPolylineEntityRef.current = viewer.entities.add({
           name: "Plot Outline",
           polyline: {
             positions: Cesium.Cartesian3.fromDegreesArray(flatLoopDegrees),
-            width: 4.0,
-            material: Cesium.Color.fromCssColorString("#38bdf8"),
+            width: 3.5,
+            material: Cesium.Color.fromCssColorString("#ffffff"),
             clampToGround: true,
           },
         });
@@ -229,9 +229,9 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
             name: `Plot Corner ${idx + 1}`,
             position: Cesium.Cartesian3.fromDegrees(pt[0], pt[1]),
             point: {
-              pixelSize: 10,
-              color: Cesium.Color.fromCssColorString("#38bdf8"),
-              outlineColor: Cesium.Color.fromCssColorString("#0f172a"),
+              pixelSize: 9,
+              color: Cesium.Color.fromCssColorString("#ffffff"),
+              outlineColor: Cesium.Color.BLACK,
               outlineWidth: 2,
               heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
               disableDepthTestDistance: Number.POSITIVE_INFINITY,
@@ -261,10 +261,10 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
               text: `${distFt.toFixed(1)} ft (${distM.toFixed(1)}m)`,
               font: "bold 12px 'Inter', sans-serif",
               style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-              fillColor: Cesium.Color.fromCssColorString("#f1f5f9"),
-              outlineColor: Cesium.Color.fromCssColorString("#090d16"),
+              fillColor: Cesium.Color.WHITE,
+              outlineColor: Cesium.Color.BLACK,
               outlineWidth: 3,
-              backgroundColor: Cesium.Color.fromCssColorString("rgba(15, 23, 42, 0.85)"),
+              backgroundColor: Cesium.Color.fromCssColorString("rgba(9, 9, 11, 0.9)"),
               showBackground: true,
               backgroundPadding: new Cesium.Cartesian2(7, 4),
               verticalOrigin: Cesium.VerticalOrigin.CENTER,
@@ -291,10 +291,10 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
               text: `📐 ${label}`,
               font: "bold 14px 'Outfit', sans-serif",
               style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-              fillColor: Cesium.Color.fromCssColorString("#38bdf8"),
+              fillColor: Cesium.Color.WHITE,
               outlineColor: Cesium.Color.BLACK,
               outlineWidth: 3,
-              backgroundColor: Cesium.Color.fromCssColorString("rgba(15, 23, 42, 0.9)"),
+              backgroundColor: Cesium.Color.fromCssColorString("rgba(9, 9, 11, 0.94)"),
               showBackground: true,
               backgroundPadding: new Cesium.Cartesian2(10, 5),
               verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
@@ -1039,100 +1039,43 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
 
         {/* In-Globe Placement Status Banner */}
         {isPlacing && (
-          <div
-            style={{
-              position: "absolute",
-              top: "20px",
-              left: "50%",
-              transform: "translateX(-50%)",
-              zIndex: 350,
-              background: "rgba(17, 24, 39, 0.92)",
-              backdropFilter: "blur(16px)",
-              border: "1px solid rgba(56, 189, 248, 0.4)",
-              borderRadius: "12px",
-              padding: "10px 20px",
-              display: "flex",
-              alignItems: "center",
-              gap: "14px",
-              boxShadow: "0 8px 32px rgba(0, 0, 0, 0.6)",
-              color: "#f1f5f9",
-              fontSize: "0.85rem",
-            }}
-          >
-            <span>
+          <div className="globe-notification-banner">
+            <span className="banner-text">
               📍 <strong>Click anywhere on the map</strong> to place your plot
             </span>
             <button
               onClick={stopPlacing}
-              style={{
-                background: "#ef4444",
-                color: "white",
-                border: "none",
-                borderRadius: "6px",
-                padding: "4px 10px",
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
+              className="banner-cancel-btn"
+              title="Cancel plot placement"
             >
-              Cancel
+              Cancel ✕
             </button>
           </div>
         )}
 
         {/* In-Globe Drawing Status Banner */}
         {isDrawing && (
-          <div
-            style={{
-              position: "absolute",
-              top: "20px",
-              left: "50%",
-              transform: "translateX(-50%)",
-              zIndex: 350,
-              background: "rgba(17, 24, 39, 0.92)",
-              backdropFilter: "blur(16px)",
-              border: "1px solid rgba(245, 158, 11, 0.4)",
-              borderRadius: "12px",
-              padding: "10px 20px",
-              display: "flex",
-              alignItems: "center",
-              gap: "14px",
-              boxShadow: "0 8px 32px rgba(0, 0, 0, 0.6)",
-              color: "#f1f5f9",
-              fontSize: "0.85rem",
-            }}
-          >
-            <span>
-              ✏️ <strong>Click map to place plot corners</strong> ({drawingPoints.length} points) • Double-click to complete
+          <div className="globe-notification-banner drawing">
+            <span className="banner-text">
+              ✏️ <strong>Click map to place corners</strong> ({drawingPoints.length} points) • Double-click to finish
             </span>
-            <button
-              onClick={finishDrawingPlotInternal}
-              disabled={drawingPoints.length < 3}
-              style={{
-                background: drawingPoints.length >= 3 ? "#10b981" : "#374151",
-                color: "white",
-                border: "none",
-                borderRadius: "6px",
-                padding: "4px 12px",
-                fontWeight: 600,
-                cursor: drawingPoints.length >= 3 ? "pointer" : "not-allowed",
-              }}
-            >
-              Complete
-            </button>
-            <button
-              onClick={stopDrawing}
-              style={{
-                background: "#ef4444",
-                color: "white",
-                border: "none",
-                borderRadius: "6px",
-                padding: "4px 10px",
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
-            >
-              Cancel
-            </button>
+            <div className="banner-actions">
+              <button
+                onClick={finishDrawingPlotInternal}
+                disabled={drawingPoints.length < 3}
+                className="banner-complete-btn"
+                title={drawingPoints.length < 3 ? "Click at least 3 points on the map first" : "Complete and confirm plot shape"}
+              >
+                ✓ Complete OK
+              </button>
+              <button
+                onClick={stopDrawing}
+                className="banner-cancel-btn"
+                title="Cancel drawing"
+              >
+                Cancel ✕
+              </button>
+            </div>
           </div>
         )}
 

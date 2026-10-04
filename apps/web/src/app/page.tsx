@@ -788,9 +788,9 @@ export default function HomePage() {
                         <button
                           onClick={() => globeRef.current?.flyToBuilding()}
                           style={{
-                            background: "rgba(56, 189, 248, 0.2)",
-                            border: "1px solid rgba(56, 189, 248, 0.4)",
-                            color: "#38bdf8",
+                            background: "var(--color-surface)",
+                            border: "1px solid var(--color-surface-border)",
+                            color: "var(--color-text-primary)",
                             borderRadius: "6px",
                             padding: "4px 8px",
                             fontSize: "0.72rem",
@@ -929,10 +929,10 @@ export default function HomePage() {
               onClick={() => setActiveTab("chat")}
               style={{
                 width: "100%",
-                background: "linear-gradient(135deg, #4f46e5, #7c3aed)",
+                background: "var(--color-text-primary)",
                 border: "none",
                 borderRadius: "10px",
-                color: "white",
+                color: "var(--color-bg-primary)",
                 padding: "12px 16px",
                 fontWeight: 700,
                 fontSize: "0.85rem",
@@ -941,8 +941,9 @@ export default function HomePage() {
                 alignItems: "center",
                 justifyContent: "center",
                 gap: "8px",
-                boxShadow: "0 4px 16px rgba(79, 70, 229, 0.4)",
+                boxShadow: "var(--shadow-sm)",
                 marginTop: "12px",
+                transition: "opacity 0.15s ease",
               }}
             >
               <span>Back to AI Prompt & Generation</span>
