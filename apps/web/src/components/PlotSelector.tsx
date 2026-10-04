@@ -106,12 +106,13 @@ export default function PlotSelector({
       </div>
 
       {/* Map Style Pills */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "4px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "4px" }}>
         {(
           [
-            { id: "google_satellite", label: "HD Sat", icon: "🛰️" },
+            { id: "esri_hd", label: "Esri HD", icon: "🛰️" },
+            { id: "google_satellite", label: "Google", icon: "🌍" },
             { id: "streets", label: "Streets", icon: "🗺️" },
-            { id: "blueprint", label: "Blueprint", icon: "📐" },
+            { id: "blueprint", label: "CAD", icon: "📐" },
             { id: "studio", label: "Studio", icon: "🏛️" },
           ] as const
         ).map((m) => {

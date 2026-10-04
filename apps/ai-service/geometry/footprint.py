@@ -1,14 +1,14 @@
 """
 GeoBuild AI — Footprint and Setback Module
-Calculates plot area, marla conversion, and buildable footprint by applying setbacks.
+Calculates plot area, marla conversion, canonical orientation, and buildable footprint.
 Rule 7: All internal measurements are in metres.
 Rule 10: 1 marla ≈ 25.2929 m² (≈ 272.25 sq ft).
 """
 
 from typing import Any
+import math
 import numpy as np
-from shapely.geometry import Polygon, LineString, MultiPolygon
-from shapely.ops import clip_by_rect
+from shapely.geometry import Polygon, MultiPolygon
 import shapely.affinity as affinity
 
 # 1 marla ≈ 25.2929 m² (Rule 10)
@@ -22,111 +22,146 @@ def compute_polygon_area_marla(plot_utm: list[list[float]]) -> tuple[float, floa
     Returns (area_marla, area_sqm).
     """
     poly = Polygon(plot_utm)
+    if not poly.is_valid:
+        poly = poly.buffer(0)
     area_sqm = float(poly.area)
     area_marla = float(area_sqm / MARLA_TO_SQM)
     return area_marla, area_sqm
+
+
+def get_canonical_frame(
+    plot_utm: list[list[float]],
+    front_edge_idx: int = 0,
+) -> dict[str, Any]:
+    """
+    Compute a canonical 2D coordinate system for the plot where:
+      - Origin (0, 0) is at the plot centroid.
+      - +X axis is tangent to the front street edge (from left to right along the street).
+      - +Y axis is normal pointing inward into the plot depth (from street toward rear).
+      - Front street is at minimum Y.
+      - Rear of the plot is at maximum Y.
+    """
+    plot_poly = Polygon(plot_utm)
+    if not plot_poly.is_valid:
+        plot_poly = plot_poly.buffer(0)
+
+    coords = list(plot_poly.exterior.coords)
+    if coords[0] == coords[-1]:
+        coords = coords[:-1]
+    n_pts = len(coords)
+
+    centroid = plot_poly.centroid
+    cx, cy = centroid.x, centroid.y
+    c_arr = np.array([cx, cy])
+
+    # Front edge vector (Edge from front_edge_idx to next vertex)
+    f_idx = front_edge_idx % n_pts
+    next_idx = (f_idx + 1) % n_pts
+    p0 = np.array(coords[f_idx])
+    p1 = np.array(coords[next_idx])
+
+    edge_vec = p1 - p0
+    edge_len = np.linalg.norm(edge_vec)
+    if edge_len < 1e-6:
+        u_vec = np.array([1.0, 0.0])
+    else:
+        u_vec = edge_vec / edge_len
+
+    # Normal vector perpendicular to u_vec pointing inward into plot depth
+    v_vec = np.array([-u_vec[1], u_vec[0]])
+    midpoint = (p0 + p1) / 2.0
+    to_centroid = c_arr - midpoint
+    if np.dot(v_vec, to_centroid) < 0:
+        v_vec = -v_vec
+
+    # Calculate real-world street heading angle in degrees clockwise from North
+    # u_vec is [dx, dy] where dx is Easting and dy is Northing
+    street_angle_rad = math.atan2(u_vec[0], u_vec[1])
+    street_heading_deg = (math.degrees(street_angle_rad) + 360.0) % 360.0
+    # Cesium heading relative to ENU frame (when u_vec is East, heading is 0)
+    cesium_heading_deg = (street_heading_deg - 90.0) % 360.0
+
+    # Project all vertices into canonical (x, y)
+    canonical_coords: list[tuple[float, float]] = []
+    for pt in coords:
+        p_arr = np.array(pt) - c_arr
+        x_local = float(np.dot(p_arr, u_vec))
+        y_local = float(np.dot(p_arr, v_vec))
+        canonical_coords.append((x_local, y_local))
+
+    canonical_poly = Polygon(canonical_coords)
+    if not canonical_poly.is_valid:
+        canonical_poly = canonical_poly.buffer(0)
+
+    minx, miny, maxx, maxy = canonical_poly.bounds
+
+    return {
+        "centroid": (float(cx), float(cy)),
+        "u_vec": u_vec,
+        "v_vec": v_vec,
+        "coords_canonical": canonical_coords,
+        "poly_canonical": canonical_poly,
+        "bounds": (minx, miny, maxx, maxy),
+        "width": float(maxx - minx),
+        "depth": float(maxy - miny),
+        "street_heading_deg": street_heading_deg,
+        "cesium_heading_deg": cesium_heading_deg,
+    }
 
 
 def compute_buildable_footprint(
     plot_utm: list[list[float]],
     front_edge_idx: int = 0,
     setbacks: dict[str, float] | None = None,
-) -> tuple[Polygon, float]:
+) -> tuple[Polygon, float, dict[str, Any]]:
     """
-    Compute buildable footprint polygon from plot UTM boundary and setbacks.
-    
-    setbacks dictionary:
-      - 'front': float (metres)
-      - 'back': float (metres)
-      - 'left': float (metres)
-      - 'right': float (metres)
+    Compute buildable footprint polygon respecting Pakistani setbacks.
+    Returns (footprint_canonical_poly, footprint_sqm, frame_info).
     """
     if setbacks is None:
         setbacks = {"front": 1.5, "back": 1.5, "left": 0.0, "right": 0.0}
 
-    plot_poly = Polygon(plot_utm)
-    if not plot_poly.is_valid:
-        plot_poly = plot_poly.buffer(0)
+    frame = get_canonical_frame(plot_utm, front_edge_idx=front_edge_idx)
+    poly_can = frame["poly_canonical"]
+    minx, miny, maxx, maxy = frame["bounds"]
+    width = frame["width"]
+    depth = frame["depth"]
 
-    # If simple polygon with 4 sides, we can calculate directed edge offsets
-    coords = list(plot_poly.exterior.coords)
-    if coords[0] == coords[-1]:
-        coords = coords[:-1]
-    n_pts = len(coords)
+    sb_front = float(setbacks.get("front", 1.5))
+    sb_back = float(setbacks.get("back", 1.5))
+    sb_left = float(setbacks.get("left", 0.0))
+    sb_right = float(setbacks.get("right", 0.0))
 
-    # General inward buffer as baseline or fallback
-    min_sb = min(setbacks.values())
-    max_sb = max(setbacks.values())
-    avg_sb = sum(setbacks.values()) / max(len(setbacks), 1)
+    # For 4-sided plots (standard Pakistani plots: 5 Marla, 10 Marla, 1 Kanal, 2 Kanal)
+    coords = frame["coords_canonical"]
+    if len(coords) == 4 and width > 4.0 and depth > 6.0:
+        # Construct exact buildable box in canonical coordinates
+        # Front is at miny, rear is at maxy
+        # Left is at minx, right is at maxx
+        buildable_min_x = minx + sb_left
+        buildable_max_x = maxx - sb_right
+        buildable_min_y = miny + sb_front
+        buildable_max_y = maxy - sb_back
 
-    if n_pts == 4 and max_sb > 0:
-        # Reorder vertices so front_edge_idx is index 0
-        ordered = [coords[(front_edge_idx + i) % 4] for i in range(4)]
-        # Edge 0: Front
-        # Edge 1: Right
-        # Edge 2: Back
-        # Edge 3: Left
-        sb_front = setbacks.get("front", 1.5)
-        sb_right = setbacks.get("right", 0.0)
-        sb_back = setbacks.get("back", 1.5)
-        sb_left = setbacks.get("left", 0.0)
-
-        # Inward half-plane clipping for each edge
-        curr_poly = plot_poly
-        edge_setbacks = [sb_front, sb_right, sb_back, sb_left]
-        
-        centroid = plot_poly.centroid
-        for i in range(4):
-            sb = edge_setbacks[i]
-            if sb <= 0.01:
-                continue
-            p1 = np.array(ordered[i])
-            p2 = np.array(ordered[(i + 1) % 4])
-            edge_vec = p2 - p1
-            edge_len = np.linalg.norm(edge_vec)
-            if edge_len < 1e-6:
-                continue
-            # Normal pointing towards centroid
-            normal = np.array([-edge_vec[1], edge_vec[0]]) / edge_len
-            midpoint = (p1 + p2) / 2.0
-            # Ensure normal points inward towards centroid
-            to_centroid = np.array([centroid.x - midpoint[0], centroid.y - midpoint[1]])
-            if np.dot(normal, to_centroid) < 0:
-                normal = -normal
-
-            # Shift the edge inward by sb
-            offset_mid = midpoint + normal * sb
-            # Create a large cutting half-plane or buffer
-            # Simplified: test line offset
-            offset_line_p1 = (p1 + normal * sb) - edge_vec * 5.0
-            offset_line_p2 = (p2 + normal * sb) + edge_vec * 5.0
-            
-            # Construct a half-plane polygon containing centroid
-            far_offset = normal * 1000.0
-            half_plane = Polygon([
-                offset_line_p1,
-                offset_line_p2,
-                offset_line_p2 + far_offset,
-                offset_line_p1 + far_offset,
+        # Ensure valid dimensions
+        if buildable_max_x > buildable_min_x + 3.0 and buildable_max_y > buildable_min_y + 4.0:
+            box_poly = Polygon([
+                (buildable_min_x, buildable_min_y),
+                (buildable_max_x, buildable_min_y),
+                (buildable_max_x, buildable_max_y),
+                (buildable_min_x, buildable_max_y),
             ])
-            if half_plane.is_valid and curr_poly.intersects(half_plane):
-                clipped = curr_poly.intersection(half_plane)
-                if not clipped.is_empty and clipped.area > 5.0:
-                    if isinstance(clipped, MultiPolygon):
-                        clipped = max(clipped.geoms, key=lambda g: g.area)
-                    curr_poly = clipped
+            return box_poly, float(box_poly.area), frame
 
-        if curr_poly.is_valid and curr_poly.area > 5.0:
-            return curr_poly, float(curr_poly.area)
-
-    # Fallback to buffer with average setback
-    buffer_dist = -max(avg_sb, 0.5)
-    buffered = plot_poly.buffer(buffer_dist)
-    if not buffered.is_empty and buffered.area > 5.0:
+    # General polygon setback calculation: buffer inward
+    avg_sb = (sb_front + sb_back + sb_left + sb_right) / 4.0
+    buffer_dist = -max(avg_sb, 0.8)
+    buffered = poly_can.buffer(buffer_dist)
+    if not buffered.is_empty and buffered.area > 10.0:
         if isinstance(buffered, MultiPolygon):
             buffered = max(buffered.geoms, key=lambda g: g.area)
-        return buffered, float(buffered.area)
+        return buffered, float(buffered.area), frame
 
-    # If setback buffer made it too small, scale inward by 85%
-    scaled = affinity.scale(plot_poly, xfact=0.85, yfact=0.85, origin='centroid')
-    return scaled, float(scaled.area)
+    # Fallback: Scale inward by 82%
+    scaled = affinity.scale(poly_can, xfact=0.82, yfact=0.82, origin=(0, 0))
+    return scaled, float(scaled.area), frame

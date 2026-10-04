@@ -15,7 +15,7 @@ import type {
   ScreenSpaceEventHandler,
 } from "cesium";
 
-export type MapStyleKey = "google_satellite" | "streets" | "blueprint" | "studio";
+export type MapStyleKey = "esri_hd" | "google_satellite" | "streets" | "blueprint" | "studio";
 
 export interface CesiumGlobeRef {
   viewer: CesiumViewer | null;
@@ -56,12 +56,18 @@ interface CesiumGlobeProps {
 
 const MAP_STYLES: Record<
   Exclude<MapStyleKey, "studio">,
-  { name: string; url: string; maxLevel: number }
+  { name: string; url: string; maxLevel: number; subdomains?: string[] }
 > = {
+  esri_hd: {
+    name: "Esri Ultra-HD",
+    url: "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    maxLevel: 20,
+  },
   google_satellite: {
     name: "HD Satellite",
-    url: "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
-    maxLevel: 21,
+    url: "https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
+    subdomains: ["0", "1", "2", "3"],
+    maxLevel: 22,
   },
   streets: {
     name: "Clear Streets",
@@ -172,6 +178,7 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
           const provider = new Cesium.UrlTemplateImageryProvider({
             url: config.url,
             maximumLevel: config.maxLevel,
+            subdomains: config.subdomains,
           });
           viewer.imageryLayers.addImageryProvider(provider);
         }
@@ -879,8 +886,9 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
           let baseLayer: any = undefined;
           try {
             const googleProvider = new Cesium.UrlTemplateImageryProvider({
-              url: "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
-              maximumLevel: 21,
+              url: "https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
+              subdomains: ["0", "1", "2", "3"],
+              maximumLevel: 22,
             });
             baseLayer = new Cesium.ImageryLayer(googleProvider);
           } catch (e) {
@@ -951,8 +959,9 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
 
           // Razor-sharp clarity settings for high-DPI displays & satellite zoom
           viewer.resolutionScale = Math.min(window.devicePixelRatio || 1.0, 2.0);
-          viewer.scene.globe.maximumScreenSpaceError = 1.33; // Load higher detail tiles earlier
-          viewer.scene.globe.tileCacheSize = 250;
+          viewer.scene.globe.maximumScreenSpaceError = 1.0; // Load highest detail tiles earlier (no blurry terrain)
+          viewer.scene.globe.tileCacheSize = 500;
+          viewer.scene.globe.loadingDescendantLimit = 250;
           viewer.scene.postProcessStages.fxaa.enabled = true; // Smooth anti-aliasing
 
           if (hasValidToken) {

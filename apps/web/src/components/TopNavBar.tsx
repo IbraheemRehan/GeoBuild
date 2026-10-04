@@ -276,10 +276,14 @@ export default function TopNavBar({
             title="Choose Basemap Imagery Layer"
           >
             <span>
-              {mapStyle === "google_satellite"
-                ? "🛰️ Satellite"
+              {mapStyle === "esri_hd"
+                ? "🛰️ Esri HD"
+                : mapStyle === "google_satellite"
+                ? "🌍 Google Sat"
                 : mapStyle === "streets"
                 ? "🗺️ Streets"
+                : mapStyle === "blueprint"
+                ? "📐 Blueprint"
                 : "🏛️ Studio 3D"}
             </span>
             <span className="dropdown-arrow">{showStyleMenu ? "▲" : "▼"}</span>
@@ -290,13 +294,30 @@ export default function TopNavBar({
               <div className="dropdown-section-title">Basemap Imagery</div>
               <button
                 onClick={() => {
+                  onSelectMapStyle("esri_hd");
+                  setShowStyleMenu(false);
+                }}
+                className={`dropdown-item-btn ${mapStyle === "esri_hd" ? "selected" : ""}`}
+              >
+                <div className="item-with-icon">
+                  <span>🛰️</span>
+                  <div>
+                    <div className="item-primary-label">Esri Ultra-HD Aerial (0.3m)</div>
+                    <div className="item-sub-label">Sub-meter high-res satellite</div>
+                  </div>
+                </div>
+                {mapStyle === "esri_hd" && <span className="check-mark">✓</span>}
+              </button>
+
+              <button
+                onClick={() => {
                   onSelectMapStyle("google_satellite");
                   setShowStyleMenu(false);
                 }}
                 className={`dropdown-item-btn ${mapStyle === "google_satellite" ? "selected" : ""}`}
               >
                 <div className="item-with-icon">
-                  <span>🛰️</span>
+                  <span>🌍</span>
                   <div>
                     <div className="item-primary-label">HD Satellite (Google Hybrid)</div>
                     <div className="item-sub-label">Photorealistic aerial textures</div>
@@ -320,6 +341,23 @@ export default function TopNavBar({
                   </div>
                 </div>
                 {mapStyle === "streets" && <span className="check-mark">✓</span>}
+              </button>
+
+              <button
+                onClick={() => {
+                  onSelectMapStyle("blueprint");
+                  setShowStyleMenu(false);
+                }}
+                className={`dropdown-item-btn ${mapStyle === "blueprint" ? "selected" : ""}`}
+              >
+                <div className="item-with-icon">
+                  <span>📐</span>
+                  <div>
+                    <div className="item-primary-label">CAD Blueprint</div>
+                    <div className="item-sub-label">Dark architectural linework</div>
+                  </div>
+                </div>
+                {mapStyle === "blueprint" && <span className="check-mark">✓</span>}
               </button>
 
               <button

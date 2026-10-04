@@ -3,7 +3,7 @@ GeoBuild AI — Generate Router
 Generates procedural 3D GLB models from BuildingSpec + plot geometry.
 Rule 11: Procedural geometry only — no AI-generated meshes.
 Rule 12: All 3D output is GLB format.
-Rule 13: Use trimesh for extrusion and manifold3d for CSG operations.
+Rule 13: Use trimesh for extrusion.
 Rule 14: Facade styles come from data/styles/*.json, never hardcoded.
 Rule 15: Read building regulations from data/rules/*.json.
 Rule 16: Always show disclaimer.
@@ -49,7 +49,6 @@ def _get_setbacks_for_plot(city: str, area_marla: float) -> dict[str, float]:
     regs = _load_city_regulations(city)
     if regs and "zones" in regs:
         zones = regs["zones"]
-        # Find the best matching zone by plot size
         matched_zone = None
         closest_diff = float("inf")
         for zone_id, zone_data in zones.items():
@@ -68,13 +67,15 @@ def _get_setbacks_for_plot(city: str, area_marla: float) -> dict[str, float]:
                 "right": float(sb.get("right", 0.0)),
             }
 
-    # Sensible defaults for Pakistani residential plots
+    # Standard Pakistani residential setbacks (Rule 15)
     if area_marla <= 7.0:
-        return {"front": 1.5, "back": 1.5, "left": 0.0, "right": 0.0}
-    elif area_marla <= 15.0:
-        return {"front": 3.0, "back": 3.0, "left": 1.5, "right": 0.0}
-    else:
+        return {"front": 1.5, "back": 1.2, "left": 0.0, "right": 0.0}
+    elif area_marla <= 14.0:
+        return {"front": 3.0, "back": 2.0, "left": 0.5, "right": 0.5}
+    elif area_marla <= 25.0:
         return {"front": 4.5, "back": 3.0, "left": 1.5, "right": 1.5}
+    else:
+        return {"front": 6.0, "back": 4.5, "left": 2.0, "right": 2.0}
 
 
 class GenerateRequest(BaseModel):
@@ -123,33 +124,26 @@ async def generate_model(request: GenerateRequest):
         # 3. Retrieve regulatory setbacks (Rule 15)
         setbacks = _get_setbacks_for_plot(request.city, area_marla)
 
-        # 4. Compute buildable footprint polygon with setbacks
-        footprint_poly, footprint_sqm = compute_buildable_footprint(
+        # 4. Compute buildable footprint polygon with setbacks in canonical frame
+        footprint_poly, footprint_sqm, frame = compute_buildable_footprint(
             plot_utm=plot_utm,
             front_edge_idx=request.front_edge_index,
             setbacks=setbacks,
         )
 
-        # 5. Generate procedural 3D GLB building (Rule 11, 12, 13, 14)
+        # 5. Generate realistic procedural 3D GLB building (Rule 11, 12, 13, 14)
         glb_bytes, meta = generate_building_glb(
             footprint_poly=footprint_poly,
             spec=request.spec,
-            plot_utm=plot_utm,
-            center_at_origin=True,
+            plot_poly=frame["poly_canonical"],
         )
 
         # 6. Calculate centroid in WGS84 for Cesium placement
-        c_utm_x, c_utm_y = footprint_poly.centroid.x, footprint_poly.centroid.y
+        c_utm_x, c_utm_y = frame["centroid"]
         center_lon, center_lat = utm_to_wgs84(c_utm_x, c_utm_y, city=request.city)
 
-        # 7. Calculate orientation heading from front edge
-        front_idx = request.front_edge_index % len(plot_utm)
-        next_idx = (front_idx + 1) % len(plot_utm)
-        dx = plot_utm[next_idx][0] - plot_utm[front_idx][0]
-        dy = plot_utm[next_idx][1] - plot_utm[front_idx][1]
-        # Heading angle in degrees clockwise from North
-        angle_rad = math.atan2(dx, dy)
-        heading_deg = (math.degrees(angle_rad) + 360.0) % 360.0
+        # 7. Cesium heading angle in degrees
+        heading_deg = float(frame["cesium_heading_deg"])
 
         # 8. Encode to base64 and data URI for immediate browser rendering
         glb_b64 = base64.b64encode(glb_bytes).decode("ascii")
@@ -159,10 +153,10 @@ async def generate_model(request: GenerateRequest):
             glb_url=None,
             glb_base64=glb_b64,
             glb_data_uri=glb_data_uri,
-            building_footprint_sqm=round(footprint_sqm, 2),
-            plot_area_sqm=round(area_sqm, 2),
-            plot_area_marla=round(area_marla, 2),
-            total_height_m=round(meta.get("total_height_m", request.spec.floors * request.spec.floorHeightM), 2),
+            building_footprint_sqm=round(footprint_sqm, 1),
+            plot_area_sqm=round(area_sqm, 1),
+            plot_area_marla=round(area_marla, 1),
+            total_height_m=round(float(meta.get("total_height_m", 7.0)), 1),
             center_wgs84=[round(center_lon, 6), round(center_lat, 6)],
             heading_deg=round(heading_deg, 1),
             status="success",
@@ -172,4 +166,3 @@ async def generate_model(request: GenerateRequest):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Generation failed: {str(e)}")
-

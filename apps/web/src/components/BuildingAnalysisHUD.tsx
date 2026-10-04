@@ -28,9 +28,9 @@ export default function BuildingAnalysisHUD({
   if (!generate) return null;
 
   const cost = analysis?.estimated_cost_pkr;
-  const coveragePct = analysis?.coverage_pct ?? Math.round((generate.building_footprint_sqm / (generate.plot_area_sqm || 126)) * 100);
-  const farRatio = analysis?.far_ratio ?? ((generate.building_footprint_sqm * (spec?.floors || 2)) / (generate.plot_area_sqm || 126));
-  const heightM = analysis?.total_height_m || generate.total_height_m || 7.0;
+  const coveragePct = analysis?.coverage_pct ?? Math.round((Number(generate.building_footprint_sqm) / (Number(generate.plot_area_sqm) || 126)) * 100);
+  const farRatio = analysis?.far_ratio ?? ((Number(generate.building_footprint_sqm) * (spec?.floors || 2)) / (Number(generate.plot_area_sqm) || 126));
+  const heightM = Number(analysis?.total_height_m || generate.total_height_m || 7.0);
   const parkingSpaces = analysis?.parking_spaces ?? (spec?.parking?.cars || 1);
   const issues = analysis?.compliance_issues || [];
 
@@ -76,10 +76,10 @@ export default function BuildingAnalysisHUD({
           <span style={{ fontSize: "1.2rem" }}>🏗️</span>
           <div>
             <h3 style={{ margin: 0, fontSize: "1rem", fontWeight: 700, letterSpacing: "-0.01em" }}>
-              {spec?.floors || 2}-Storey Building • {generate.plot_area_marla || 5} Marla
+              {spec?.floors || 2}-Storey Building • {generate.plot_area_marla ? Number(generate.plot_area_marla).toFixed(1) : 5} Marla
             </h3>
             <p style={{ margin: 0, fontSize: "0.75rem", color: "#94a3b8" }}>
-              {generate.building_footprint_sqm} m² footprint • {heightM}m total height
+              {Number(generate.building_footprint_sqm).toFixed(1)} m² footprint • {heightM.toFixed(1)}m total height
             </p>
           </div>
         </div>
@@ -211,7 +211,7 @@ export default function BuildingAnalysisHUD({
           <div style={{ background: "rgba(30, 41, 59, 0.5)", padding: "8px 12px", borderRadius: "10px", border: "1px solid rgba(255, 255, 255, 0.05)" }}>
             <span style={{ fontSize: "0.7rem", color: "#94a3b8", textTransform: "uppercase" }}>Total Height</span>
             <div style={{ fontSize: "1.05rem", fontWeight: 700, color: heightM <= 12 ? "#a78bfa" : "#f87171" }}>
-              {heightM}m
+              {heightM.toFixed(1)}m
               <span style={{ fontSize: "0.7rem", color: "#94a3b8", fontWeight: 400, marginLeft: "4px" }}>
                 ({spec?.floors || 2} Floors)
               </span>
@@ -263,7 +263,7 @@ export default function BuildingAnalysisHUD({
               {coveragePct <= 80 ? `✓ Ground Coverage (${coveragePct}%)` : `✕ Coverage Exceeded (${coveragePct}%)`}
             </span>
             <span style={{ background: heightM <= 12 ? "rgba(16, 185, 129, 0.15)" : "rgba(239, 68, 68, 0.15)", color: heightM <= 12 ? "#34d399" : "#f87171", padding: "2px 8px", borderRadius: "4px", fontSize: "0.75rem", fontWeight: 600 }}>
-              {heightM <= 12 ? `✓ Height (${heightM}m)` : `✕ Height Exceeded (${heightM}m)`}
+              {heightM <= 12 ? `✓ Height (${heightM.toFixed(1)}m)` : `✕ Height Exceeded (${heightM.toFixed(1)}m)`}
             </span>
             <span style={{ background: Number(farRatio) <= 1.6 ? "rgba(16, 185, 129, 0.15)" : "rgba(239, 68, 68, 0.15)", color: Number(farRatio) <= 1.6 ? "#34d399" : "#f87171", padding: "2px 8px", borderRadius: "4px", fontSize: "0.75rem", fontWeight: 600 }}>
               {Number(farRatio) <= 1.6 ? `✓ FAR (${Number(farRatio).toFixed(2)})` : `✕ FAR Exceeded (${Number(farRatio).toFixed(2)})`}
