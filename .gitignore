@@ -1,0 +1,50 @@
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Build outputs
+.next/
+dist/
+build/
+*.egg-info/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker
+pgdata/
+
+# Cesium
+public/cesium/
+
+# Generated models
+*.glb
+*.gltf
+!data/samples/*.glb
+
+# Coverage / test
+.coverage
+htmlcov/
+.pytest_cache/
+coverage/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*

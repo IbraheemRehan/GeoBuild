@@ -1,0 +1,34 @@
+{
+  "_meta": {
+    "description": "Construction cost rates for Pakistan",
+    "source": "Market survey estimates, 2024 Q1",
+    "disclaimer": "AI-assisted rough estimates. Get professional quantity surveyor quotes before committing funds.",
+    "currency": "PKR",
+    "rates_date": "2024-01-01"
+  },
+  "per_sqft_rates": {
+    "grey_structure": {
+      "economy": 2200,
+      "standard": 2800,
+      "premium": 3500
+    },
+    "finishing": {
+      "economy": 1500,
+      "standard": 2500,
+      "premium": 4000
+    },
+    "total": {
+      "economy": 3700,
+      "standard": 5300,
+      "premium": 7500
+    }
+  },
+  "additional": {
+    "basement_per_sqft": 3500,
+    "boundary_wall_per_rft": 4500,
+    "boring_water_supply": 250000,
+    "electrical_connection": 150000,
+    "gas_connection": 100000,
+    "sewerage": 200000
+  }
+}

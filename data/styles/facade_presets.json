@@ -1,0 +1,66 @@
+{
+  "contemporary_pakistani": {
+    "name": "Contemporary Pakistani",
+    "description": "Modern take on Pakistani residential architecture with clean lines, jali screens, and warm tones",
+    "primaryMaterial": "plaster_beige",
+    "accentMaterial": "brick_red",
+    "windowStyle": "rectangular_large",
+    "roofStyle": "flat_parapet",
+    "hasJali": true,
+    "hasBalcony": true,
+    "colors": {
+      "primary": "#D4B896",
+      "secondary": "#8B4513",
+      "accent": "#2C3E50",
+      "trim": "#FFFFFF"
+    }
+  },
+  "modern_minimal": {
+    "name": "Modern Minimal",
+    "description": "Clean minimalist design with large glass panels and flat roof",
+    "primaryMaterial": "plaster_white",
+    "accentMaterial": "glass_panel",
+    "windowStyle": "floor_to_ceiling",
+    "roofStyle": "flat_clean",
+    "hasJali": false,
+    "hasBalcony": true,
+    "colors": {
+      "primary": "#F5F5F5",
+      "secondary": "#333333",
+      "accent": "#1A1A2E",
+      "trim": "#CCCCCC"
+    }
+  },
+  "classical": {
+    "name": "Classical",
+    "description": "Traditional Pakistani colonial-era style with columns and ornate details",
+    "primaryMaterial": "plaster_white",
+    "accentMaterial": "stone_grey",
+    "windowStyle": "arched",
+    "roofStyle": "flat_cornice",
+    "hasJali": false,
+    "hasBalcony": true,
+    "colors": {
+      "primary": "#FAF0E6",
+      "secondary": "#8B7355",
+      "accent": "#556B2F",
+      "trim": "#DEB887"
+    }
+  },
+  "mughal_inspired": {
+    "name": "Mughal Inspired",
+    "description": "Inspired by Mughal architecture with pointed arches, jali work, and domes",
+    "primaryMaterial": "stone_grey",
+    "accentMaterial": "marble_white",
+    "windowStyle": "pointed_arch",
+    "roofStyle": "dome_accent",
+    "hasJali": true,
+    "hasBalcony": true,
+    "colors": {
+      "primary": "#C4A882",
+      "secondary": "#FAEBD7",
+      "accent": "#006400",
+      "trim": "#FFD700"
+    }
+  }
+}

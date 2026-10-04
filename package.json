@@ -1,0 +1,16 @@
+{
+  "name": "geobuild-ai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI-Powered 3D Real Estate & Development Platform",
+  "scripts": {
+    "dev:web": "pnpm --filter @geobuild/web dev",
+    "dev:api": "pnpm --filter @geobuild/api start:dev",
+    "dev:ai": "cd apps/ai-service && python -m uvicorn main:app --reload --port 8000",
+    "db:up": "docker compose -f infra/docker-compose.yml up -d",
+    "db:down": "docker compose -f infra/docker-compose.yml down",
+    "dev": "concurrently \"pnpm dev:web\" \"pnpm dev:api\" \"pnpm dev:ai\""
+  },
+  "keywords": ["geospatial", "3d", "real-estate", "ai", "cesium"],
+  "license": "MIT"
+}
