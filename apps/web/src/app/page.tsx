@@ -3,6 +3,8 @@
 import { useState, useRef, useCallback } from "react";
 import dynamic from "next/dynamic";
 import type { CesiumGlobeRef } from "@/components/CesiumGlobe";
+import PlotSelector, { type PlotPresetKey } from "@/components/PlotSelector";
+import BuildingAnalysisHUD from "@/components/BuildingAnalysisHUD";
 
 // Dynamic import — CesiumJS cannot run on the server
 const CesiumGlobe = dynamic(() => import("@/components/CesiumGlobe"), {
@@ -10,14 +12,14 @@ const CesiumGlobe = dynamic(() => import("@/components/CesiumGlobe"), {
   loading: () => (
     <div className="cesium-loading-overlay">
       <div className="cesium-loading-spinner" />
-      <p>Preparing 3D engine...</p>
+      <p>Preparing 3D geospatial engine...</p>
     </div>
   ),
 });
 
 const CESIUM_TOKEN = process.env.NEXT_PUBLIC_CESIUM_ION_TOKEN || "";
 
-// City coordinates
+// City coordinates (Rule 8 & 9)
 const CITIES = {
   lahore: { lng: 74.3587, lat: 31.5204, label: "Lahore" },
   islamabad: { lng: 73.0479, lat: 33.6844, label: "Islamabad" },
@@ -41,23 +43,129 @@ interface ChatMessage {
   timestamp: Date;
 }
 
+// Helper to create preset plot coordinates centered at (centerLng, centerLat)
+function createPresetPlotCoordinates(
+  centerLng: number,
+  centerLat: number,
+  preset: PlotPresetKey
+): [number, number][] {
+  // Dimensions in metres (Rule 7)
+  const dims: Record<PlotPresetKey, { width: number; depth: number }> = {
+    "5marla": { width: 7.62, depth: 13.72 },   // 25x45 ft ~ 104.5 m² (Rule 10)
+    "10marla": { width: 10.67, depth: 19.81 }, // 35x65 ft ~ 211.4 m²
+    "1kanal": { width: 15.24, depth: 27.43 },  // 50x90 ft ~ 418.0 m²
+    "2kanal": { width: 22.86, depth: 36.58 },  // 75x120 ft ~ 836.0 m²
+  };
+
+  const { width, depth } = dims[preset];
+  const latRad = (centerLat * Math.PI) / 180;
+  const mPerDegLat = 111132;
+  const mPerDegLng = 111132 * Math.cos(latRad);
+
+  const halfW = width / 2 / mPerDegLng;
+  const halfD = depth / 2 / mPerDegLat;
+
+  // 4 corners: front-left, front-right, back-right, back-left
+  return [
+    [centerLng - halfW, centerLat - halfD],
+    [centerLng + halfW, centerLat - halfD],
+    [centerLng + halfW, centerLat + halfD],
+    [centerLng - halfW, centerLat + halfD],
+  ];
+}
+
 export default function HomePage() {
   const globeRef = useRef<CesiumGlobeRef>(null);
   const [selectedCity, setSelectedCity] = useState<CityKey>("lahore");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [globeReady, setGlobeReady] = useState(false);
 
-  const handleCityChange = useCallback(
-    (city: CityKey) => {
-      setSelectedCity(city);
-      const coords = CITIES[city];
-      globeRef.current?.flyTo(coords.lng, coords.lat, 15000);
+  // Plot state
+  const [currentPlot, setCurrentPlot] = useState<[number, number][] | null>(null);
+  const [selectedPreset, setSelectedPreset] = useState<PlotPresetKey | "custom" | null>(null);
+  const [plotMarla, setPlotMarla] = useState<number | null>(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+
+  // 3D Building & Analysis state
+  const [latestAnalysis, setLatestAnalysis] = useState<{
+    spec: any;
+    generate: any;
+    analysis: any;
+  } | null>(null);
+  const [isOrbiting, setIsOrbiting] = useState(false);
+
+  // Handle City Change
+  const handleCityChange = useCallback((city: CityKey) => {
+    setSelectedCity(city);
+    const coords = CITIES[city];
+    globeRef.current?.flyTo(coords.lng, coords.lat, 3500);
+  }, []);
+
+  // Preset plot selection
+  const handleSelectPreset = useCallback(
+    (preset: PlotPresetKey) => {
+      setSelectedPreset(preset);
+      const cityCoords = CITIES[selectedCity];
+      const coords = createPresetPlotCoordinates(cityCoords.lng, cityCoords.lat, preset);
+      setCurrentPlot(coords);
+
+      const marlaMap: Record<PlotPresetKey, number> = {
+        "5marla": 5.0,
+        "10marla": 10.0,
+        "1kanal": 20.0,
+        "2kanal": 40.0,
+      };
+      setPlotMarla(marlaMap[preset]);
+
+      const label = `${preset === "5marla" ? "5 Marla" : preset === "10marla" ? "10 Marla" : preset === "1kanal" ? "1 Kanal" : "2 Kanal"} Plot`;
+      globeRef.current?.setPlotPolygon(coords, label);
+      globeRef.current?.flyTo(cityCoords.lng, cityCoords.lat, 180);
     },
-    []
+    [selectedCity]
   );
 
+  // Custom plot drawn on map
+  const handlePlotDrawn = useCallback((coords: [number, number][]) => {
+    setCurrentPlot(coords);
+    setSelectedPreset("custom");
+
+    // Approximate area in Marla (1 marla ≈ 25.2929 m²)
+    const sumX = coords.reduce((acc, c) => acc + c[0], 0);
+    const sumY = coords.reduce((acc, c) => acc + c[1], 0);
+    const cLat = sumY / coords.length;
+    const latRad = (cLat * Math.PI) / 180;
+    const mPerDegLat = 111132;
+    const mPerDegLng = 111132 * Math.cos(latRad);
+
+    let areaSqm = 0;
+    const n = coords.length;
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      const xi = coords[i][0] * mPerDegLng;
+      const yi = coords[i][1] * mPerDegLat;
+      const xj = coords[j][0] * mPerDegLng;
+      const yj = coords[j][1] * mPerDegLat;
+      areaSqm += xi * yj - xj * yi;
+    }
+    areaSqm = Math.abs(areaSqm) / 2;
+    const marla = areaSqm / 25.2929;
+    setPlotMarla(roundTo(marla, 1));
+  }, []);
+
+  // Clear plot and model
+  const handleClearPlot = useCallback(() => {
+    setCurrentPlot(null);
+    setSelectedPreset(null);
+    setPlotMarla(null);
+    setLatestAnalysis(null);
+    globeRef.current?.clearPlot();
+    globeRef.current?.clearModel();
+  }, []);
+
+  // Core Pipeline: Natural Language -> AI Spec -> 3D Building -> Map Placement -> Feasibility
   const handleSend = useCallback(
     async (text?: string) => {
       const prompt = text || inputValue.trim();
@@ -72,57 +180,148 @@ export default function HomePage() {
       };
       setMessages((prev) => [...prev, userMsg]);
       setIsProcessing(true);
+      setStatusMessage("Interpreting requirements with AI...");
+
+      const aiUrl = process.env.NEXT_PUBLIC_AI_SERVICE_URL || "http://localhost:8000";
 
       try {
-        // Call AI service
-        const res = await fetch(
-          `${process.env.NEXT_PUBLIC_AI_SERVICE_URL || "http://localhost:8000"}/api/v1/interpret`,
-          {
+        // Step 1: Natural Language -> AI Building Specification (Rule 1, 2, 5)
+        const interpretRes = await fetch(`${aiUrl}/api/v1/interpret`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt,
+            city: selectedCity,
+          }),
+        });
+
+        if (!interpretRes.ok) {
+          let errDetail = `AI service error: ${interpretRes.status}`;
+          try {
+            const errData = await interpretRes.json();
+            if (errData?.detail) errDetail = errData.detail;
+          } catch {}
+          throw new Error(errDetail);
+        }
+
+        const interpretData = await interpretRes.json();
+        const spec = interpretData.spec;
+
+        // Step 2: Ensure Plot Polygon exists
+        let activePlot = currentPlot;
+        if (!activePlot || activePlot.length < 3) {
+          // Infer plot size from prompt or spec
+          const pLower = prompt.toLowerCase();
+          let presetKey: PlotPresetKey = "5marla";
+          if (pLower.includes("10 marla") || pLower.includes("10marla") || spec.rooms?.bedrooms >= 5) {
+            presetKey = "10marla";
+          } else if (pLower.includes("kanal") || pLower.includes("villa") || spec.floors >= 3) {
+            presetKey = "1kanal";
+          }
+
+          const cityCoords = CITIES[selectedCity];
+          activePlot = createPresetPlotCoordinates(cityCoords.lng, cityCoords.lat, presetKey);
+          setCurrentPlot(activePlot);
+          setSelectedPreset(presetKey);
+          const label = `${presetKey === "5marla" ? "5 Marla" : presetKey === "10marla" ? "10 Marla" : "1 Kanal"} Plot`;
+          globeRef.current?.setPlotPolygon(activePlot, label);
+        }
+
+        setStatusMessage("Building procedural 3D model (GLB)...");
+
+        // Step 3: Procedural 3D Geometry Generation (Rule 11, 12, 13, 14)
+        const generateRes = await fetch(`${aiUrl}/api/v1/generate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            spec,
+            plot_polygon_wgs84: activePlot,
+            front_edge_index: 0,
+            city: selectedCity,
+          }),
+        });
+
+        if (!generateRes.ok) {
+          let genErr = `Generation failed: ${generateRes.status}`;
+          try {
+            const ed = await generateRes.json();
+            if (ed?.detail) genErr = ed.detail;
+          } catch {}
+          throw new Error(genErr);
+        }
+
+        const generateData = await generateRes.json();
+
+        // Step 4: Geospatial Placement on Cesium Globe
+        if (generateData.glb_data_uri && generateData.center_wgs84) {
+          globeRef.current?.loadGlbModel(
+            generateData.glb_data_uri,
+            generateData.center_wgs84 as [number, number],
+            generateData.heading_deg || 0
+          );
+        }
+
+        setStatusMessage("Checking regulations and feasibility...");
+
+        // Step 5: Regulatory Compliance & Cost Feasibility (Rule 15, 16, 17)
+        let analysisData: any = null;
+        try {
+          const analyzeRes = await fetch(`${aiUrl}/api/v1/analyze`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              prompt,
+              spec,
+              plot_area_sqm: generateData.plot_area_sqm || 126.5,
               city: selectedCity,
+              cost_tier: "standard",
             }),
+          });
+          if (analyzeRes.ok) {
+            analysisData = await analyzeRes.json();
           }
-        );
+        } catch (anErr) {
+          console.warn("Analysis check skipped:", anErr);
+        }
 
-        if (!res.ok) throw new Error(`AI service error: ${res.status}`);
+        setLatestAnalysis({
+          spec,
+          generate: generateData,
+          analysis: analysisData,
+        });
 
-        const data = await res.json();
-
+        // Step 6: Assistant Chat Message
         const assistantMsg: ChatMessage = {
           id: crypto.randomUUID(),
           role: "assistant",
-          content: formatSpec(data),
+          content: formatFullResponse(spec, generateData, analysisData),
           timestamp: new Date(),
         };
         setMessages((prev) => [...prev, assistantMsg]);
 
         // Show assumptions if any
-        if (data.assumptions?.length > 0) {
+        if (interpretData.assumptions?.length > 0) {
           const sysMsg: ChatMessage = {
             id: crypto.randomUUID(),
             role: "system",
-            content: `💡 ${data.assumptions.join(" • ")}`,
+            content: `💡 Assumptions: ${interpretData.assumptions.join(" • ")}`,
             timestamp: new Date(),
           };
           setMessages((prev) => [...prev, sysMsg]);
         }
-      } catch (err) {
-        // Fallback: show a helpful error
+      } catch (err: any) {
         const errorMsg: ChatMessage = {
           id: crypto.randomUUID(),
           role: "system",
-          content: `⚠️ AI service is not running. Start it with: cd apps/ai-service && uvicorn main:app --reload --port 8000`,
+          content: `⚠️ ${err?.message || "Failed to process request. Ensure AI service is running at port 8000."}`,
           timestamp: new Date(),
         };
         setMessages((prev) => [...prev, errorMsg]);
       } finally {
         setIsProcessing(false);
+        setStatusMessage(null);
       }
     },
-    [inputValue, selectedCity]
+    [inputValue, selectedCity, currentPlot]
   );
 
   const handleKeyDown = useCallback(
@@ -134,6 +333,14 @@ export default function HomePage() {
     },
     [handleSend]
   );
+
+  const toggleOrbitMode = useCallback(() => {
+    setIsOrbiting((prev) => {
+      const next = !prev;
+      globeRef.current?.toggleOrbit(next);
+      return next;
+    });
+  }, []);
 
   return (
     <div className="app-layout">
@@ -157,6 +364,19 @@ export default function HomePage() {
           </div>
         </div>
 
+        {/* Plot Selector Widget */}
+        <div style={{ padding: "0 16px 12px 16px" }}>
+          <PlotSelector
+            selectedPreset={selectedPreset}
+            onSelectPreset={handleSelectPreset}
+            onStartDrawing={() => globeRef.current?.startDrawingPlot()}
+            onClearPlot={handleClearPlot}
+            isDrawing={isDrawing}
+            hasPlot={Boolean(currentPlot && currentPlot.length >= 3)}
+            plotMarla={plotMarla}
+          />
+        </div>
+
         <div className="sidebar-content">
           <div className="chat-panel">
             <div className="chat-messages">
@@ -165,8 +385,9 @@ export default function HomePage() {
                   <div className="welcome-icon">🏗️</div>
                   <h2 className="welcome-title">Design Your Building</h2>
                   <p className="welcome-description">
-                    Select a plot on the map and describe your dream building.
-                    I&apos;ll generate a 3D visualization with full analysis.
+                    Select a plot preset above or describe your dream building.
+                    The platform generates the exact 3D building, places it on the map,
+                    and validates building regulations.
                   </p>
                   <div className="welcome-suggestions">
                     {SUGGESTIONS.map((s, i) => (
@@ -185,6 +406,7 @@ export default function HomePage() {
                   <div
                     key={msg.id}
                     className={`chat-message ${msg.role}`}
+                    style={{ whiteSpace: "pre-line" }}
                   >
                     {msg.content}
                   </div>
@@ -192,11 +414,37 @@ export default function HomePage() {
               )}
             </div>
 
+            {/* Status indicator if working */}
+            {statusMessage && (
+              <div
+                style={{
+                  padding: "6px 16px",
+                  fontSize: "0.75rem",
+                  color: "#818cf8",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  background: "rgba(99, 102, 241, 0.1)",
+                }}
+              >
+                <div
+                  style={{
+                    width: "8px",
+                    height: "8px",
+                    borderRadius: "50%",
+                    background: "#818cf8",
+                    animation: "pulse 1s infinite",
+                  }}
+                />
+                {statusMessage}
+              </div>
+            )}
+
             <div className="chat-input-container">
               <div className="chat-input-wrapper">
                 <textarea
                   className="chat-input"
-                  placeholder="Describe your building... (e.g., 'modern 2-storey house with 4 bedrooms')"
+                  placeholder="Describe your building... (e.g. '5 marla ka ghar, 2 manzil, 4 kamre')"
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
                   onKeyDown={handleKeyDown}
@@ -217,82 +465,121 @@ export default function HomePage() {
         </div>
       </aside>
 
-      {/* Globe */}
+      {/* 3D Geospatial Globe */}
       <main className="globe-container">
         <CesiumGlobe
           ref={globeRef}
           ionToken={CESIUM_TOKEN}
           onReady={() => setGlobeReady(true)}
+          onPlotDrawn={handlePlotDrawn}
+          onDrawingChange={(drawing) => setIsDrawing(drawing)}
         />
 
-        {/* Floating toolbar */}
+        {/* Floating Map Toolbar */}
         {globeReady && (
           <div className="floating-toolbar">
             <button
-              className="toolbar-btn"
-              title="Draw Plot"
+              className={`toolbar-btn ${isDrawing ? "active" : ""}`}
+              title={isDrawing ? "Drawing mode active" : "Draw Plot on Map"}
               onClick={() => {
-                /* TODO: Enable polygon drawing */
+                if (isDrawing) {
+                  globeRef.current?.cancelDrawingPlot();
+                } else {
+                  globeRef.current?.startDrawingPlot();
+                }
               }}
             >
               ✏️
             </button>
+            {latestAnalysis && (
+              <button
+                className="toolbar-btn"
+                title="Focus 3D Building"
+                onClick={() => globeRef.current?.flyToBuilding()}
+              >
+                🎥
+              </button>
+            )}
+            {latestAnalysis && (
+              <button
+                className={`toolbar-btn ${isOrbiting ? "active" : ""}`}
+                title="360° Cinematic Orbit"
+                onClick={toggleOrbitMode}
+              >
+                🔄
+              </button>
+            )}
             <button
               className="toolbar-btn"
-              title="Toggle Buildings"
-              onClick={() => {
-                /* TODO: Toggle OSM buildings */
-              }}
-            >
-              🏢
-            </button>
-            <button
-              className="toolbar-btn"
-              title="Sun Position"
-              onClick={() => {
-                /* TODO: Sun/shadow slider */
-              }}
+              title="Toggle Sun Shadows"
+              onClick={() => globeRef.current?.toggleShadows()}
             >
               ☀️
             </button>
             <button
               className="toolbar-btn"
-              title="Reset View"
-              onClick={() =>
-                handleCityChange(selectedCity)
-              }
+              title="Reset View to City"
+              onClick={() => handleCityChange(selectedCity)}
             >
-              🔄
+              🏙️
             </button>
           </div>
+        )}
+
+        {/* Floating Building & Feasibility HUD */}
+        {latestAnalysis && (
+          <BuildingAnalysisHUD
+            spec={latestAnalysis.spec}
+            generate={latestAnalysis.generate}
+            analysis={latestAnalysis.analysis}
+            onFocusBuilding={() => globeRef.current?.flyToBuilding()}
+            onToggleOrbit={toggleOrbitMode}
+            onToggleShadows={() => globeRef.current?.toggleShadows()}
+            isOrbiting={isOrbiting}
+            onClose={() => setLatestAnalysis(null)}
+          />
         )}
       </main>
     </div>
   );
 }
 
-/**
- * Format a BuildingSpec response into readable text.
- */
-function formatSpec(data: any): string {
-  const spec = data.spec;
-  if (!spec) return "Received response but no spec was generated.";
+function roundTo(val: number, decimals: number): number {
+  const factor = Math.pow(10, decimals);
+  return Math.round(val * factor) / factor;
+}
 
+/**
+ * Format complete response combining spec, 3D model status, and costs.
+ */
+function formatFullResponse(spec: any, generate: any, analysis: any): string {
   const lines = [
-    `✅ Building Specification Generated:`,
+    `✅ 3D Building Model Generated & Placed!`,
     ``,
-    `🏠 ${spec.floors} Floor${spec.floors > 1 ? "s" : ""}${spec.basement ? " + Basement" : ""}`,
-    `🛏️ ${spec.rooms?.bedrooms || "?"} Bedrooms, ${spec.rooms?.bathrooms || "?"} Bathrooms`,
-    `🚗 ${spec.parking?.cars || 0} Car Parking (${spec.parking?.type || "covered"})`,
-    `📐 Floor Height: ${spec.floorHeightM || 3.05}m`,
-    `🎨 Style: ${(spec.facade?.style || "contemporary_pakistani").replace(/_/g, " ")}`,
+    `🏠 ${spec.floors} Storey${spec.floors > 1 ? "s" : ""}${spec.basement ? " + Basement" : ""} • Style: ${(spec.facade?.style || "contemporary_pakistani").replace(/_/g, " ")}`,
+    `📐 Total Height: ${generate.total_height_m}m • Footprint: ${generate.building_footprint_sqm} m²`,
+    `🛏️ ${spec.rooms?.bedrooms || 3} Bedrooms, ${spec.rooms?.bathrooms || 3} Bathrooms`,
+    `🚗 ${spec.parking?.cars || 1} Car Parking (${spec.parking?.type || "covered"})`,
   ];
 
   if (spec.rooftopTerrace) lines.push(`🌇 Rooftop Terrace`);
-  if (spec.facade?.hasJali) lines.push(`🪟 Jali Screens`);
   if (spec.facade?.hasBalcony) lines.push(`🏛️ Balcony`);
-  if (spec.rooms?.servantQuarter) lines.push(`🏠 Servant Quarter`);
+  if (spec.facade?.hasJali) lines.push(`🪟 Traditional Jali Screen`);
   if (spec.rooms?.drawingRoom) lines.push(`🛋️ Drawing Room`);
+
+  if (analysis?.cost_estimate?.total) {
+    const total = analysis.cost_estimate.total;
+    const formattedTotal =
+      total >= 10000000
+        ? `PKR ${(total / 10000000).toFixed(2)} Crore`
+        : `PKR ${(total / 100000).toFixed(2)} Lakh`;
+    lines.push(``);
+    lines.push(`💰 Estimated Cost: ${formattedTotal}`);
+  }
+
+  lines.push(``);
+  lines.push(`⚖️ Preliminary check — not legal or regulatory approval`);
 
   return lines.join("\n");
 }
+

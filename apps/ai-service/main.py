@@ -4,6 +4,13 @@ FastAPI application for building spec generation and 3D model processing.
 """
 
 import os
+import sys
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -17,8 +24,9 @@ load_dotenv()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application startup/shutdown lifecycle."""
-    print("🚀 GeoBuild AI Service starting...")
-    print(f"   Gemini API Key: {'✅ configured' if os.getenv('GEMINI_API_KEY') else '❌ missing'}")
+    api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
+    is_real_key = bool(api_key and api_key != "your_gemini_api_key_here" and not api_key.startswith("your_"))
+    print(f"   Gemini API Key: {'✅ configured' if is_real_key else '⚠️ not configured (using offline fallback parser)'}")
     yield
     print("🛑 GeoBuild AI Service shutting down...")
 
@@ -49,8 +57,10 @@ app.include_router(analyze.router, prefix="/api/v1", tags=["analyze"])
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
+    api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
+    is_real_key = bool(api_key and api_key != "your_gemini_api_key_here" and not api_key.startswith("your_"))
     return {
         "status": "healthy",
         "service": "geobuild-ai",
-        "gemini_configured": bool(os.getenv("GEMINI_API_KEY")),
+        "gemini_configured": is_real_key,
     }

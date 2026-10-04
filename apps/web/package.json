@@ -1,9 +1,11 @@
 {
-  "name": "web",
+  "name": "@geobuild/web",
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "node scripts/copy-cesium.mjs",
     "dev": "next dev",
+    "prebuild": "node scripts/copy-cesium.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"

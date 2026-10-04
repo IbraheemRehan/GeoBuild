@@ -54,24 +54,22 @@ async def interpret_prompt(request: InterpretRequest):
         logger.warning(f"Gemini failed, trying fallback parser: {e}")
 
         # Attempt fallback parsing
-        if FallbackParser.can_handle(request.prompt):
-            patches = FallbackParser.parse_to_patches(request.prompt)
-            spec = BuildingSpec()  # Start from defaults
-            for patch in patches:
-                _apply_patch(spec, patch["path"], patch["value"], patch.get("op", "replace"))
+        patches = FallbackParser.parse_to_patches(request.prompt)
+        spec = BuildingSpec()  # Start from defaults
+        for patch in patches:
+            _apply_patch(spec, patch["path"], patch["value"], patch.get("op", "replace"))
 
-            return InterpretResponse(
-                spec=spec,
-                assumptions=[
-                    "Used fallback parser (AI was unavailable)",
-                    "Applied defaults for unspecified fields",
-                ],
-                confidence=0.6,
-            )
+        assumptions = [
+            "Used fallback parser (AI was unavailable)",
+            "Applied defaults for unspecified fields",
+        ]
+        if not patches:
+            assumptions.append("Could not extract specific details, applied standard Pakistani house template")
 
-        raise HTTPException(
-            503,
-            detail="AI service temporarily unavailable and fallback parser could not handle this prompt.",
+        return InterpretResponse(
+            spec=spec,
+            assumptions=assumptions,
+            confidence=0.6 if patches else 0.4,
         )
 
 

@@ -17,8 +17,9 @@ load_dotenv()
 
 T = TypeVar("T", bound=BaseModel)
 
-# Model name — update if Gemini renames it
-MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+# Primary and fallback model names
+MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
+FALLBACK_MODELS = ["gemini-3.7-flash", "gemini-3.8-flash", "gemini-3.1-flash-lite"]
 
 # In-memory cache (will be backed by DB later)
 _cache: dict[str, str] = {}
@@ -34,19 +35,13 @@ class GeminiProvider:
     """LLM provider using Google Gemini with structured JSON output."""
 
     def __init__(self):
-        api_key = os.getenv("GEMINI_API_KEY")
-        if not api_key:
-            raise ValueError("GEMINI_API_KEY environment variable is required")
+        api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
+        if not api_key or api_key == "your_gemini_api_key_here" or api_key.startswith("your_"):
+            raise ValueError("GEMINI_API_KEY environment variable is not configured with a valid key")
 
         from google import genai
         self.client = genai.Client(api_key=api_key)
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=30),
-        retry=retry_if_exception_type((Exception,)),
-        reraise=True,
-    )
     def generate_json(
         self,
         system: str,
@@ -57,16 +52,6 @@ class GeminiProvider:
     ) -> T:
         """
         Generate structured JSON from Gemini, validated against a Pydantic schema.
-        
-        Args:
-            system: System instruction / prompt context
-            user: User's natural language input
-            schema: Pydantic model class for structured output
-            use_cache: Whether to use prompt-level caching
-            temperature: LLM temperature (lower = more deterministic)
-        
-        Returns:
-            Validated Pydantic model instance
         """
         cache_key = _hash_prompt(system, user)
 
@@ -76,27 +61,34 @@ class GeminiProvider:
 
         from google.genai import types
 
-        response = self.client.models.generate_content(
-            model=MODEL,
-            contents=user,
-            config=types.GenerateContentConfig(
-                system_instruction=system,
-                response_mime_type="application/json",
-                response_schema=schema,
-                temperature=temperature,
-            ),
-        )
+        models_to_try = [MODEL] + [m for m in FALLBACK_MODELS if m != MODEL]
+        last_error = None
 
-        raw_text = response.text
+        for model_name in models_to_try:
+            try:
+                response = self.client.models.generate_content(
+                    model=model_name,
+                    contents=user,
+                    config=types.GenerateContentConfig(
+                        system_instruction=system,
+                        response_mime_type="application/json",
+                        response_schema=schema,
+                        temperature=temperature,
+                    ),
+                )
+                raw_text = response.text
+                result = schema.model_validate_json(raw_text)
 
-        # Always re-validate — structured output can still violate ranges
-        result = schema.model_validate_json(raw_text)
+                if use_cache:
+                    _cache[cache_key] = result.model_dump_json()
 
-        # Cache the validated result
-        if use_cache:
-            _cache[cache_key] = result.model_dump_json()
+                return result
+            except Exception as e:
+                last_error = e
+                continue
 
-        return result
+        if last_error:
+            raise last_error
 
 
 class FallbackParser:
@@ -107,14 +99,16 @@ class FallbackParser:
 
     # Pattern → (field_path, transform_fn)
     PATTERNS = [
-        (r"(\d+)\s*(?:bed(?:room)?s?)", "rooms.bedrooms", lambda m: int(m.group(1))),
-        (r"(\d+)\s*(?:bath(?:room)?s?)", "rooms.bathrooms", lambda m: int(m.group(1))),
-        (r"(\d+)\s*(?:floor|stor(?:e?y|ies))", "floors", lambda m: int(m.group(1))),
+        (r"(\d+)\s*(?:bed(?:room)?s?|kamr(?:e|ay|a)?)", "rooms.bedrooms", lambda m: int(m.group(1))),
+        (r"(\d+)\s*(?:bath(?:room)?s?|washroom(?:s)?|ghusal\s*khan(?:e|a)?)", "rooms.bathrooms", lambda m: int(m.group(1))),
+        (r"(\d+)\s*(?:floor|stor(?:e?y|ies)|manzil(?:a)?)", "floors", lambda m: int(m.group(1))),
         (r"(\d+)\s*(?:car|parking)", "parking.cars", lambda m: int(m.group(1))),
+        (r"covered\s+parking", "parking.cars", lambda m: 1),
+        (r"car\s*porch|garage", "parking.cars", lambda m: 1),
         (r"add\s+(?:a\s+)?floor", "floors", lambda m: "increment"),
-        (r"add\s+(?:a\s+)?(?:bed(?:room)?)", "rooms.bedrooms", lambda m: "increment"),
-        (r"rooftop\s+terrace", "rooftopTerrace", lambda m: True),
-        (r"basement", "basement", lambda m: True),
+        (r"add\s+(?:a\s+)?(?:bed(?:room)?|kamr(?:e|ay|a)?)", "rooms.bedrooms", lambda m: "increment"),
+        (r"rooftop\s+terrace|chhat", "rooftopTerrace", lambda m: True),
+        (r"basement|tehkhana", "basement", lambda m: True),
         (r"modern", "facade.style", lambda m: "modern_minimal"),
         (r"contemporary\s*pakistani", "facade.style", lambda m: "contemporary_pakistani"),
         (r"classical", "facade.style", lambda m: "classical"),
@@ -122,7 +116,7 @@ class FallbackParser:
         (r"jali|jaali", "facade.hasJali", lambda m: True),
         (r"balcon(?:y|ies)", "facade.hasBalcony", lambda m: True),
         (r"servant\s*quarter", "rooms.servantQuarter", lambda m: True),
-        (r"drawing\s*room", "rooms.drawingRoom", lambda m: True),
+        (r"drawing\s*room|baithak", "rooms.drawingRoom", lambda m: True),
     ]
 
     @classmethod
