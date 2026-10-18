@@ -18,6 +18,8 @@ interface MapControlsProps {
   onToggleOrbit: () => void;
   hasBuilding: boolean;
   hasPlot: boolean;
+  showMarkings?: boolean;
+  onToggleMarkings?: () => void;
 }
 
 export default function MapControls({
@@ -28,6 +30,8 @@ export default function MapControls({
   onToggleOrbit,
   hasBuilding,
   hasPlot,
+  showMarkings = true,
+  onToggleMarkings,
 }: MapControlsProps) {
   const [showHelp, setShowHelp] = useState(false);
   const [shadowsEnabled, setShadowsEnabled] = useState(true);
@@ -164,6 +168,21 @@ export default function MapControls({
             ☀️
           </button>
 
+          {/* Markings / Clean View Toggle */}
+          {onToggleMarkings && (
+            <button
+              onClick={onToggleMarkings}
+              className={`gis-dock-btn markings ${showMarkings ? "active-markings" : ""}`}
+              title={
+                showMarkings
+                  ? "Clean View (Hide plot boundary markings & dimension numbers)"
+                  : "Show Plot Markings & Edge Dimension Numbers"
+              }
+            >
+              {showMarkings ? "📏" : "📐"}
+            </button>
+          )}
+
           <div className="gis-dock-separator" />
 
           {/* Help / Shortcut Modal Trigger */}
@@ -212,6 +231,10 @@ export default function MapControls({
                 <div className="shortcut-row">
                   <div className="shortcut-badge">2D / 3D Switch</div>
                   <div className="shortcut-desc">Toggle between top-down CAD and 3D angle</div>
+                </div>
+                <div className="shortcut-row">
+                  <div className="shortcut-badge">Markings / Clean View</div>
+                  <div className="shortcut-desc">Toggle dimension numbers, corner pins & plot boundary</div>
                 </div>
               </div>
 

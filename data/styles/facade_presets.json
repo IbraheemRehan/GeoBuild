@@ -1,66 +1,128 @@
 {
   "contemporary_pakistani": {
     "name": "Contemporary Pakistani",
-    "description": "Modern take on Pakistani residential architecture with clean lines, jali screens, and warm tones",
-    "primaryMaterial": "plaster_beige",
-    "accentMaterial": "brick_red",
-    "windowStyle": "rectangular_large",
-    "roofStyle": "flat_parapet",
+    "description": "Modern Pakistani residential villa architecture with travertine stucco, natural teak louvers, charcoal slate feature pier, and expansive curtain glass",
+    "primaryMaterial": "travertine_stucco",
+    "accentMaterial": "charcoal_slate",
+    "windowStyle": "curtain_wall_mullions",
+    "roofStyle": "flat_parapet_pergola",
     "hasJali": true,
     "hasBalcony": true,
     "colors": {
-      "primary": "#D4B896",
-      "secondary": "#8B4513",
-      "accent": "#2C3E50",
-      "trim": "#FFFFFF"
+      "primary": "#EAE4DC",
+      "secondary": "#262930",
+      "accent": "#7A4726",
+      "trim": "#CBD5E1",
+      "glass": "#4A6E82",
+      "mullion": "#181A20"
     }
   },
   "modern_minimal": {
     "name": "Modern Minimal",
-    "description": "Clean minimalist design with large glass panels and flat roof",
-    "primaryMaterial": "plaster_white",
-    "accentMaterial": "glass_panel",
-    "windowStyle": "floor_to_ceiling",
-    "roofStyle": "flat_clean",
+    "description": "Clean minimalist high-contrast design with monolithic pure off-white stucco, obsidian cladding, black aluminum, and floor-to-ceiling glass",
+    "primaryMaterial": "monolithic_white_stucco",
+    "accentMaterial": "obsidian_composite",
+    "windowStyle": "floor_to_ceiling_glass",
+    "roofStyle": "minimal_flat_parapet",
     "hasJali": false,
     "hasBalcony": true,
     "colors": {
-      "primary": "#F5F5F5",
-      "secondary": "#333333",
-      "accent": "#1A1A2E",
-      "trim": "#CCCCCC"
+      "primary": "#F4F4F6",
+      "secondary": "#18181B",
+      "accent": "#27272A",
+      "trim": "#E4E4E7",
+      "glass": "#3B5368",
+      "mullion": "#09090B"
     }
   },
   "classical": {
-    "name": "Classical",
-    "description": "Traditional Pakistani colonial-era style with columns and ornate details",
-    "primaryMaterial": "plaster_white",
-    "accentMaterial": "stone_grey",
-    "windowStyle": "arched",
-    "roofStyle": "flat_cornice",
+    "name": "Classical Colonial",
+    "description": "Colonial Pakistani classical manor style with warm limestone plaster, rusticated quoins, architectural cornices, and warm timber accents",
+    "primaryMaterial": "limestone_plaster",
+    "accentMaterial": "carved_sandstone",
+    "windowStyle": "paneled_arch_mullions",
+    "roofStyle": "molded_cornice_parapet",
     "hasJali": false,
     "hasBalcony": true,
     "colors": {
-      "primary": "#FAF0E6",
-      "secondary": "#8B7355",
-      "accent": "#556B2F",
-      "trim": "#DEB887"
+      "primary": "#F3ECE1",
+      "secondary": "#574838",
+      "accent": "#8A6D4B",
+      "trim": "#DED3C4",
+      "glass": "#567280",
+      "mullion": "#382E25"
     }
   },
   "mughal_inspired": {
     "name": "Mughal Inspired",
-    "description": "Inspired by Mughal architecture with pointed arches, jali work, and domes",
-    "primaryMaterial": "stone_grey",
-    "accentMaterial": "marble_white",
-    "windowStyle": "pointed_arch",
-    "roofStyle": "dome_accent",
+    "description": "Heritage-inspired Pakistani architecture with red sandstone hues, Makrana marble accents, intricate geometric jali screens, and dome finials",
+    "primaryMaterial": "red_sandstone",
+    "accentMaterial": "white_makrana_marble",
+    "windowStyle": "cusped_arch_mullions",
+    "roofStyle": "dome_chhatri_accent",
     "hasJali": true,
     "hasBalcony": true,
     "colors": {
-      "primary": "#C4A882",
-      "secondary": "#FAEBD7",
-      "accent": "#006400",
-      "trim": "#FFD700"
+      "primary": "#C98A68",
+      "secondary": "#FAF7F2",
+      "accent": "#732626",
+      "trim": "#D4AF37",
+      "glass": "#3E6B7A",
+      "mullion": "#3A211D"
+    }
+  },
+  "industrial_brick": {
+    "name": "Industrial Loft Brick",
+    "description": "Contemporary industrial loft aesthetic featuring exposed terracotta brickwork, dark structural steel framing, and crittall multi-pane grid windows",
+    "primaryMaterial": "terracotta_brick",
+    "accentMaterial": "charcoal_slate",
+    "windowStyle": "crittall_grid_windows",
+    "roofStyle": "steel_pergola_parapet",
+    "hasJali": false,
+    "hasBalcony": true,
+    "colors": {
+      "primary": "#B2533E",
+      "secondary": "#1E2024",
+      "accent": "#382923",
+      "trim": "#2D3139",
+      "glass": "#34495E",
+      "mullion": "#111215"
+    }
+  },
+  "spanish_villa": {
+    "name": "Mediterranean Spanish Villa",
+    "description": "Warm Mediterranean villa with smooth stucco plaster, arched entrance loggia, terracotta roof accents, and warm timber shutters",
+    "primaryMaterial": "limestone_plaster",
+    "accentMaterial": "terracotta_brick",
+    "windowStyle": "arched_casement_windows",
+    "roofStyle": "terracotta_parapet",
+    "hasJali": false,
+    "hasBalcony": true,
+    "colors": {
+      "primary": "#F7EFE2",
+      "secondary": "#8B4513",
+      "accent": "#A0522D",
+      "trim": "#DEB887",
+      "glass": "#4A6E82",
+      "mullion": "#2F1E14"
+    }
+  },
+  "commercial_plaza": {
+    "name": "Commercial Modern Plaza",
+    "description": "Contemporary commercial and retail plaza with full-height display glass showrooms on ground floor, structural curtain wall glazing, and rooftop MEP screen",
+    "primaryMaterial": "charcoal_slate",
+    "accentMaterial": "monolithic_white_stucco",
+    "windowStyle": "full_curtain_wall",
+    "roofStyle": "mep_screen_parapet",
+    "hasJali": false,
+    "hasBalcony": false,
+    "colors": {
+      "primary": "#1F232B",
+      "secondary": "#F3F4F6",
+      "accent": "#3B82F6",
+      "trim": "#374151",
+      "glass": "#2563EB",
+      "mullion": "#0F172A"
     }
   }
 }

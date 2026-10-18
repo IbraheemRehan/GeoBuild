@@ -67,12 +67,12 @@ async def analyze_development(request: AnalyzeRequest):
     # Estimate building footprint (simplified — will use actual geometry later)
     # Assume 65% ground coverage as baseline
     footprint_sqm = plot_sqm * 0.65
-    coverage_pct = (footprint_sqm / plot_sqm) * 100
+    coverage_pct = round((footprint_sqm / plot_sqm) * 100, 1)
 
     # Total covered area
     floor_count = spec.floors + (1 if spec.basement else 0)
     total_covered_sqm = footprint_sqm * floor_count
-    far_ratio = total_covered_sqm / plot_sqm
+    far_ratio = round(total_covered_sqm / plot_sqm, 2)
 
     # Height
     total_height_m = spec.floors * spec.floorHeightM

@@ -215,6 +215,15 @@ export default function HomePage() {
   const [plotMarla, setPlotMarla] = useState<number | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [isPlacing, setIsPlacing] = useState(false);
+  const [showMarkings, setShowMarkings] = useState(true);
+
+  const handleToggleMarkings = useCallback(() => {
+    setShowMarkings((prev) => {
+      const next = !prev;
+      globeRef.current?.setMarkingsVisible(next);
+      return next;
+    });
+  }, []);
 
   // 3D Building & Analysis state
   const [latestAnalysis, setLatestAnalysis] = useState<{
@@ -222,7 +231,76 @@ export default function HomePage() {
     generate: any;
     analysis: any;
   } | null>(null);
+  const [buildingRotation, setBuildingRotation] = useState<number>(0);
+  const [architecturalStyle, setArchitecturalStyle] = useState<string>("contemporary_pakistani");
   const [isOrbiting, setIsOrbiting] = useState(false);
+
+  const handleSelectArchitecturalStyle = useCallback(
+    async (styleKey: string) => {
+      setArchitecturalStyle(styleKey);
+      if (latestAnalysis?.spec && currentPlot && currentPlot.length >= 3) {
+        const updatedSpec = {
+          ...latestAnalysis.spec,
+          facade: {
+            ...latestAnalysis.spec.facade,
+            style: styleKey,
+          },
+        };
+        setIsProcessing(true);
+        setStatusMessage(`Applying ${styleKey.replace(/_/g, " ")} architectural facade & PBR textures...`);
+        try {
+          const aiUrl = process.env.NEXT_PUBLIC_AI_SERVICE_URL || "http://localhost:8000";
+          const generateRes = await fetch(`${aiUrl}/api/v1/generate`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              spec: updatedSpec,
+              plot_polygon_wgs84: currentPlot,
+              front_edge_index: 0,
+              city: selectedCity,
+            }),
+          });
+          if (generateRes.ok) {
+            const generateData = await generateRes.json();
+            const heading = generateData.heading_deg || buildingRotation || 0;
+            setBuildingRotation(heading);
+            if (generateData.glb_data_uri && generateData.center_wgs84) {
+              globeRef.current?.loadGlbModel(
+                generateData.glb_data_uri,
+                generateData.center_wgs84 as [number, number],
+                heading
+              );
+            }
+            setLatestAnalysis((prev: any) => ({
+              ...prev,
+              spec: updatedSpec,
+              generate: generateData,
+            }));
+          }
+        } catch (e) {
+          console.error("Failed to re-render style:", e);
+        } finally {
+          setIsProcessing(false);
+          setStatusMessage(null);
+        }
+      }
+    },
+    [latestAnalysis, currentPlot, selectedCity, buildingRotation]
+  );
+
+  const handleRotateBuilding = useCallback((deg: number) => {
+    const normalized = ((deg % 360) + 360) % 360;
+    setBuildingRotation(normalized);
+    globeRef.current?.setBuildingRotation(normalized);
+  }, []);
+
+  const handleRotateBuildingDelta = useCallback((delta: number) => {
+    setBuildingRotation((prev) => {
+      const next = ((prev + delta) % 360 + 360) % 360;
+      globeRef.current?.setBuildingRotation(next);
+      return next;
+    });
+  }, []);
 
   // Handle City Change
   const handleCityChange = useCallback((city: string) => {
@@ -384,6 +462,7 @@ export default function HomePage() {
     setSelectedPreset(null);
     setPlotMarla(null);
     setLatestAnalysis(null);
+    setBuildingRotation(0);
     globeRef.current?.clearPlot();
     globeRef.current?.clearModel();
   }, []);
@@ -428,7 +507,20 @@ export default function HomePage() {
         }
 
         const interpretData = await interpretRes.json();
-        const spec = interpretData.spec;
+        const spec = interpretData.spec || {};
+        if (!spec.facade) spec.facade = {};
+        const pLower = prompt.toLowerCase();
+        const hasExplicitStyle =
+          pLower.includes("minimal") ||
+          pLower.includes("classical") ||
+          pLower.includes("mughal") ||
+          pLower.includes("brick") ||
+          pLower.includes("spanish") ||
+          pLower.includes("commercial") ||
+          pLower.includes("contemporary");
+        if (!hasExplicitStyle && architecturalStyle) {
+          spec.facade.style = architecturalStyle;
+        }
 
         // Step 2: Ensure Plot Polygon exists
         let activePlot = currentPlot;
@@ -480,11 +572,13 @@ export default function HomePage() {
         const generateData = await generateRes.json();
 
         // Step 4: Geospatial Placement on Cesium Globe
+        const initialHeading = generateData.heading_deg || 0;
+        setBuildingRotation(initialHeading);
         if (generateData.glb_data_uri && generateData.center_wgs84) {
           globeRef.current?.loadGlbModel(
             generateData.glb_data_uri,
             generateData.center_wgs84 as [number, number],
-            generateData.heading_deg || 0
+            initialHeading
           );
         }
 
@@ -599,8 +693,15 @@ export default function HomePage() {
         isSidebarOpen={!isSidebarCollapsed}
         onToggleSidebar={() => setIsSidebarCollapsed((prev) => !prev)}
         hasBuilding={Boolean(latestAnalysis)}
+        buildingRotation={buildingRotation}
+        onRotateBuilding={handleRotateBuilding}
+        onRotateBuildingDelta={handleRotateBuildingDelta}
         theme={theme}
         onToggleTheme={handleToggleTheme}
+        showMarkings={showMarkings}
+        onToggleMarkings={handleToggleMarkings}
+        selectedArchitecturalStyle={architecturalStyle}
+        onSelectArchitecturalStyle={handleSelectArchitecturalStyle}
       />
 
       {/* 2. Floating AI Architect Copilot Drawer (Left Side) */}
@@ -731,51 +832,75 @@ export default function HomePage() {
             <div className="chat-stream-container">
               {messages.length === 0 ? (
                 <div className="welcome-screen">
-                  <div className="welcome-icon">🏗️</div>
-                  <h2 className="welcome-title">AI Property Architect</h2>
+                  <div className="welcome-badge">
+                    <span className="welcome-badge-dot" />
+                    <span>AI Procedural Architect</span>
+                  </div>
+                  <h2 className="welcome-title">Describe Any Property</h2>
                   <p className="welcome-description">
-                    Describe your desired residential or commercial property in Urdu or English. The AI procedural pipeline extrudes 3D floors, aligns setbacks with LDA/CDA zoning, and computes accurate Pakistani construction rate tables.
+                    Enter specifications in Urdu or English. The procedural pipeline extrudes 3D floors, validates setbacks against LDA/CDA zoning, and computes official Pakistani rate tables.
                   </p>
+
+                  <div className="welcome-section-header">
+                    <span className="welcome-section-label">Popular Pakistani Blueprints</span>
+                    <span className="welcome-section-hint">Tap to design</span>
+                  </div>
 
                   <div className="welcome-suggestions">
                     <button
                       className="suggestion-btn"
                       onClick={() => handleSend("Design a modern 2-storey house with 4 bedrooms, rooftop terrace, and contemporary Pakistani facade")}
                     >
-                      🏠 <strong>5 Marla 2-Storey Modern</strong>
-                      <div style={{ fontSize: "0.72rem", opacity: 0.75, marginTop: "2px" }}>
-                        4 Beds, rooftop terrace, contemporary facade
+                      <div className="suggestion-btn-left">
+                        <div className="suggestion-icon-box">🏠</div>
+                        <div className="suggestion-text-wrap">
+                          <div className="suggestion-title">5 Marla 2-Storey Modern</div>
+                          <div className="suggestion-desc">4 Beds • Rooftop terrace • Modern facade</div>
+                        </div>
                       </div>
+                      <span className="suggestion-arrow">→</span>
                     </button>
 
                     <button
                       className="suggestion-btn"
                       onClick={() => handleSend("10 marla luxury villa with 5 bedrooms, servant quarter, covered porch, and jali screens")}
                     >
-                      🏰 <strong>10 Marla Luxury Villa</strong>
-                      <div style={{ fontSize: "0.72rem", opacity: 0.75, marginTop: "2px" }}>
-                        5 Beds, traditional jali screens, servant quarter
+                      <div className="suggestion-btn-left">
+                        <div className="suggestion-icon-box">🏰</div>
+                        <div className="suggestion-text-wrap">
+                          <div className="suggestion-title">10 Marla Luxury Villa</div>
+                          <div className="suggestion-desc">5 Beds • Traditional jali screens • Servant quarter</div>
+                        </div>
                       </div>
+                      <span className="suggestion-arrow">→</span>
                     </button>
 
                     <button
                       className="suggestion-btn"
                       onClick={() => handleSend("5 marla ka ghar, 2 manzil, 3 kamre, covered car porch, drawing room")}
                     >
-                      🇵🇰 <strong>5 Marla Ka Ghar (اردو)</strong>
-                      <div style={{ fontSize: "0.72rem", opacity: 0.75, marginTop: "2px" }}>
-                        2 Manzil, 3 Kamre, Drawing Room, Porch
+                      <div className="suggestion-btn-left">
+                        <div className="suggestion-icon-box">🇵🇰</div>
+                        <div className="suggestion-text-wrap">
+                          <div className="suggestion-title">5 Marla Ka Ghar (اردو)</div>
+                          <div className="suggestion-desc">2 Manzil • 3 Kamre • Drawing Room • Car Porch</div>
+                        </div>
                       </div>
+                      <span className="suggestion-arrow">→</span>
                     </button>
 
                     <button
                       className="suggestion-btn"
                       onClick={() => handleSend("1 kanal modern house with basement, 6 bedrooms, swimming pool patio, and double height lobby")}
                     >
-                      🏢 <strong>1 Kanal Executive Estate</strong>
-                      <div style={{ fontSize: "0.72rem", opacity: 0.75, marginTop: "2px" }}>
-                        Basement, 6 Bedrooms, double height lobby
+                      <div className="suggestion-btn-left">
+                        <div className="suggestion-icon-box">🏢</div>
+                        <div className="suggestion-text-wrap">
+                          <div className="suggestion-title">1 Kanal Executive Estate</div>
+                          <div className="suggestion-desc">Basement • 6 Beds • Double height lobby</div>
+                        </div>
                       </div>
+                      <span className="suggestion-arrow">→</span>
                     </button>
                   </div>
                 </div>
@@ -839,49 +964,51 @@ export default function HomePage() {
 
             {/* Pinned Sticky Input Dock */}
             <div className="drawer-input-dock">
-              {/* Moving Architectural Preset Ribbon */}
+              {/* Architectural Preset Ribbon */}
               <div className="moving-ribbon-wrapper">
-                <button
-                  className="ribbon-arrow-btn left"
-                  onClick={() => scrollRibbon("left")}
-                  title="Scroll left"
-                >
-                  ‹
-                </button>
-
-                <div className="moving-ribbon-viewport" ref={ribbonRef}>
-                  <div className="moving-ribbon-track">
-                    {[...ARCHITECTURAL_PRESETS, ...ARCHITECTURAL_PRESETS].map((preset, idx) => (
-                      <button
-                        key={`${preset.title}-${idx}`}
-                        className="moving-ribbon-card"
-                        onClick={() => {
-                          setInputValue(preset.prompt);
-                          handleSend(preset.prompt);
-                        }}
-                        title={`Click to generate: ${preset.prompt}`}
-                      >
-                        <span>{preset.icon}</span>
-                        <span>{preset.title}</span>
-                        <span className="ribbon-card-tag">{preset.tag}</span>
-                      </button>
-                    ))}
+                <div className="moving-ribbon-header">
+                  <span className="moving-ribbon-label">Quick Architectural Presets</span>
+                  <div className="moving-ribbon-controls">
+                    <button
+                      className="ribbon-arrow-btn"
+                      onClick={() => scrollRibbon("left")}
+                      title="Scroll left"
+                    >
+                      ‹
+                    </button>
+                    <button
+                      className="ribbon-arrow-btn"
+                      onClick={() => scrollRibbon("right")}
+                      title="Scroll right"
+                    >
+                      ›
+                    </button>
                   </div>
                 </div>
 
-                <button
-                  className="ribbon-arrow-btn right"
-                  onClick={() => scrollRibbon("right")}
-                  title="Scroll right"
-                >
-                  ›
-                </button>
+                <div className="moving-ribbon-viewport" ref={ribbonRef}>
+                  {ARCHITECTURAL_PRESETS.map((preset, idx) => (
+                    <button
+                      key={`${preset.title}-${idx}`}
+                      className="moving-ribbon-card"
+                      onClick={() => {
+                        setInputValue(preset.prompt);
+                        handleSend(preset.prompt);
+                      }}
+                      title={`Click to generate: ${preset.prompt}`}
+                    >
+                      <span>{preset.icon}</span>
+                      <span>{preset.title}</span>
+                      <span className="ribbon-card-tag">{preset.tag}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div className="chat-input-row">
                 <textarea
                   className="chat-prompt-textarea"
-                  placeholder="Describe your building (e.g. '5 marla ka ghar, 2 manzil, 4 kamre, modern facade')..."
+                  placeholder="Describe your building (e.g. '5 marla modern house, 2 floors, rooftop terrace, 4 bedrooms')..."
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
                   onKeyDown={handleKeyDown}
@@ -894,11 +1021,12 @@ export default function HomePage() {
                   disabled={!inputValue.trim() || isProcessing}
                   title="Generate 3D Architectural Building"
                 >
-                  {isProcessing ? "⏳" : "→"}
+                  {isProcessing ? "⏳" : "↑"}
                 </button>
               </div>
               <div className="chat-input-helper">
-                Press Enter ↵ to generate • Shift+Enter for new line
+                <span>Urdu / English natural language BIM</span>
+                <span>Press Enter ↵</span>
               </div>
             </div>
           </>
@@ -985,6 +1113,8 @@ export default function HomePage() {
             onToggleOrbit={toggleOrbitMode}
             hasBuilding={Boolean(latestAnalysis)}
             hasPlot={Boolean(currentPlot && currentPlot.length >= 3)}
+            showMarkings={showMarkings}
+            onToggleMarkings={handleToggleMarkings}
           />
         )}
 
@@ -1000,6 +1130,11 @@ export default function HomePage() {
             isOrbiting={isOrbiting}
             onClose={() => setLatestAnalysis(null)}
             isSidebarOpen={!isSidebarCollapsed}
+            showMarkings={showMarkings}
+            onToggleMarkings={handleToggleMarkings}
+            buildingRotation={buildingRotation}
+            onRotateBuilding={handleRotateBuilding}
+            onRotateBuildingDelta={handleRotateBuildingDelta}
           />
         )}
       </main>

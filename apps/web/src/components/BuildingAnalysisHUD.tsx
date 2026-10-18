@@ -12,6 +12,11 @@ interface BuildingAnalysisHUDProps {
   isOrbiting: boolean;
   onClose?: () => void;
   isSidebarOpen?: boolean;
+  showMarkings?: boolean;
+  onToggleMarkings?: () => void;
+  buildingRotation?: number;
+  onRotateBuilding?: (deg: number) => void;
+  onRotateBuildingDelta?: (delta: number) => void;
 }
 
 export default function BuildingAnalysisHUD({
@@ -24,6 +29,11 @@ export default function BuildingAnalysisHUD({
   isOrbiting,
   onClose,
   isSidebarOpen = true,
+  showMarkings = true,
+  onToggleMarkings,
+  buildingRotation = 0,
+  onRotateBuilding,
+  onRotateBuildingDelta,
 }: BuildingAnalysisHUDProps) {
   const [activeTab, setActiveTab] = useState<"overview" | "costs" | "compliance">("overview");
   const [isMinimized, setIsMinimized] = useState(false);
@@ -31,8 +41,14 @@ export default function BuildingAnalysisHUD({
   if (!generate) return null;
 
   const cost = analysis?.estimated_cost_pkr;
-  const coveragePct = analysis?.coverage_pct ?? Math.round((Number(generate.building_footprint_sqm) / (Number(generate.plot_area_sqm) || 126)) * 100);
-  const farRatio = analysis?.far_ratio ?? ((Number(generate.building_footprint_sqm) * (spec?.floors || 2)) / (Number(generate.plot_area_sqm) || 126));
+  const coveragePct = Number(
+    analysis?.coverage_pct ??
+      ((Number(generate.building_footprint_sqm) / (Number(generate.plot_area_sqm) || 126)) * 100)
+  );
+  const farRatio = Number(
+    analysis?.far_ratio ??
+      ((Number(generate.building_footprint_sqm) * (spec?.floors || 2)) / (Number(generate.plot_area_sqm) || 126))
+  );
   const heightM = Number(analysis?.total_height_m || generate.total_height_m || 7.0);
   const parkingSpaces = analysis?.parking_spaces ?? (spec?.parking?.cars || 1);
   const issues = analysis?.compliance_issues || [];
@@ -201,6 +217,56 @@ export default function BuildingAnalysisHUD({
             ☀️
           </button>
 
+          {onToggleMarkings && (
+            <button
+              onClick={onToggleMarkings}
+              title={
+                showMarkings
+                  ? "Clean View (Hide plot markings & dimension numbers)"
+                  : "Show Plot Markings & Dimensions"
+              }
+              style={{
+                background: showMarkings ? "var(--color-surface)" : "var(--color-surface-hover)",
+                border: `1px solid ${showMarkings ? "var(--color-surface-border)" : "var(--color-accent, #6366f1)"}`,
+                color: showMarkings ? "var(--color-text-secondary)" : "var(--color-accent, #6366f1)",
+                borderRadius: "7px",
+                padding: "4px 8px",
+                fontSize: "0.72rem",
+                fontWeight: 600,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: "4px",
+              }}
+            >
+              <span>{showMarkings ? "📏" : "📐"}</span>
+              <span>{showMarkings ? "Markings" : "Clean View"}</span>
+            </button>
+          )}
+
+          {onRotateBuildingDelta && (
+            <button
+              onClick={() => onRotateBuildingDelta(15)}
+              title={`Rotate 3D Building Angle by +15° (Current: ${Math.round(buildingRotation)}°)`}
+              style={{
+                background: "var(--color-surface)",
+                border: "1px solid var(--color-surface-border)",
+                color: "var(--color-text-primary)",
+                borderRadius: "7px",
+                padding: "4px 9px",
+                fontSize: "0.72rem",
+                fontWeight: 600,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: "4px",
+              }}
+            >
+              <span>🏢 ↻</span>
+              <span>{Math.round(buildingRotation)}°</span>
+            </button>
+          )}
+
           <button
             onClick={() => setIsMinimized(true)}
             title="Minimize HUD"
@@ -243,7 +309,7 @@ export default function BuildingAnalysisHUD({
           <div style={{ background: "var(--color-surface)", padding: "8px 12px", borderRadius: "10px", border: "1px solid var(--color-surface-border)" }}>
             <span style={{ fontSize: "0.68rem", color: "var(--color-text-secondary)", textTransform: "uppercase", fontWeight: 700 }}>Ground Coverage</span>
             <div style={{ fontSize: "1.05rem", fontWeight: 800, color: coveragePct <= 80 ? "#34d399" : "#f87171" }}>
-              {coveragePct}%
+              {coveragePct.toFixed(1)}%
               <span style={{ fontSize: "0.68rem", color: "var(--color-text-muted)", fontWeight: 400, marginLeft: "4px" }}>
                 (Max 80%)
               </span>
@@ -252,8 +318,8 @@ export default function BuildingAnalysisHUD({
 
           <div style={{ background: "var(--color-surface)", padding: "8px 12px", borderRadius: "10px", border: "1px solid var(--color-surface-border)" }}>
             <span style={{ fontSize: "0.68rem", color: "var(--color-text-secondary)", textTransform: "uppercase", fontWeight: 700 }}>FAR Ratio</span>
-            <div style={{ fontSize: "1.05rem", fontWeight: 800, color: Number(farRatio) <= 1.6 ? "var(--color-text-primary)" : "#f87171" }}>
-              {Number(farRatio).toFixed(2)}
+            <div style={{ fontSize: "1.05rem", fontWeight: 800, color: farRatio <= 1.6 ? "var(--color-text-primary)" : "#f87171" }}>
+              {farRatio.toFixed(2)}
               <span style={{ fontSize: "0.68rem", color: "var(--color-text-muted)", fontWeight: 400, marginLeft: "4px" }}>
                 (Max 1.6)
               </span>
@@ -274,6 +340,96 @@ export default function BuildingAnalysisHUD({
             <span style={{ fontSize: "0.68rem", color: "var(--color-text-secondary)", textTransform: "uppercase", fontWeight: 700 }}>Est. Total Cost</span>
             <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#fbbf24" }}>
               {formatPKR(cost?.total || 7500000)}
+            </div>
+          </div>
+
+          {/* Interactive Building Orientation Card */}
+          <div
+            style={{
+              gridColumn: "1 / -1",
+              background: "var(--color-surface)",
+              padding: "10px 14px",
+              borderRadius: "10px",
+              border: "1px solid var(--color-surface-border)",
+              display: "flex",
+              flexDirection: "column",
+              gap: "8px",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <span style={{ fontSize: "0.95rem" }}>🧭</span>
+                <span style={{ fontSize: "0.72rem", color: "var(--color-text-secondary)", textTransform: "uppercase", fontWeight: 700 }}>
+                  Building Orientation & Angle
+                </span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <span style={{ fontSize: "0.85rem", fontWeight: 800, color: "var(--color-accent, #6366f1)" }}>
+                  {Math.round(buildingRotation)}°
+                </span>
+                <span style={{ fontSize: "0.68rem", color: "var(--color-text-muted)" }}>Azimuth</span>
+              </div>
+            </div>
+
+            {/* Slider */}
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <span style={{ fontSize: "0.7rem", color: "var(--color-text-muted)", minWidth: "20px" }}>0°</span>
+              <input
+                type="range"
+                min="0"
+                max="360"
+                step="1"
+                value={Math.round(buildingRotation)}
+                onChange={(e) => onRotateBuilding?.(Number(e.target.value))}
+                style={{ flex: 1, accentColor: "var(--color-accent, #6366f1)", cursor: "pointer" }}
+              />
+              <span style={{ fontSize: "0.7rem", color: "var(--color-text-muted)", minWidth: "30px", textAlign: "right" }}>360°</span>
+            </div>
+
+            {/* Quick Angle Buttons */}
+            <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center" }}>
+              {[
+                { label: "-15°", delta: -15 },
+                { label: "+15°", delta: 15 },
+                { label: "+45°", delta: 45 },
+                { label: "+90°", delta: 90 },
+                { label: "180° Flip", delta: 180 },
+              ].map((btn) => (
+                <button
+                  key={btn.label}
+                  type="button"
+                  onClick={() => onRotateBuildingDelta?.(btn.delta)}
+                  style={{
+                    background: "var(--color-surface-hover)",
+                    border: "1px solid var(--color-surface-border)",
+                    color: "var(--color-text-primary)",
+                    borderRadius: "6px",
+                    padding: "3px 8px",
+                    fontSize: "0.7rem",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  {btn.label}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => onRotateBuilding?.(0)}
+                style={{
+                  background: "transparent",
+                  border: "1px solid var(--color-surface-border)",
+                  color: "var(--color-text-muted)",
+                  borderRadius: "6px",
+                  padding: "3px 8px",
+                  fontSize: "0.7rem",
+                  cursor: "pointer",
+                  marginLeft: "auto",
+                }}
+              >
+                Reset 0°
+              </button>
             </div>
           </div>
         </div>
@@ -316,13 +472,13 @@ export default function BuildingAnalysisHUD({
           <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
             <span style={{ fontSize: "0.75rem", color: "var(--color-text-secondary)", fontWeight: 700 }}>Regulation Checks:</span>
             <span style={{ background: coveragePct <= 80 ? "rgba(16, 185, 129, 0.15)" : "rgba(239, 68, 68, 0.15)", color: coveragePct <= 80 ? "#34d399" : "#f87171", padding: "2px 8px", borderRadius: "4px", fontSize: "0.72rem", fontWeight: 600 }}>
-              {coveragePct <= 80 ? `✓ Ground Coverage (${coveragePct}%)` : `✕ Coverage Exceeded (${coveragePct}%)`}
+              {coveragePct <= 80 ? `✓ Ground Coverage (${coveragePct.toFixed(1)}%)` : `✕ Coverage Exceeded (${coveragePct.toFixed(1)}%)`}
             </span>
             <span style={{ background: heightM <= 12 ? "rgba(16, 185, 129, 0.15)" : "rgba(239, 68, 68, 0.15)", color: heightM <= 12 ? "#34d399" : "#f87171", padding: "2px 8px", borderRadius: "4px", fontSize: "0.72rem", fontWeight: 600 }}>
               {heightM <= 12 ? `✓ Height (${heightM.toFixed(1)}m)` : `✕ Height Exceeded (${heightM.toFixed(1)}m)`}
             </span>
-            <span style={{ background: Number(farRatio) <= 1.6 ? "rgba(16, 185, 129, 0.15)" : "rgba(239, 68, 68, 0.15)", color: Number(farRatio) <= 1.6 ? "#34d399" : "#f87171", padding: "2px 8px", borderRadius: "4px", fontSize: "0.72rem", fontWeight: 600 }}>
-              {Number(farRatio) <= 1.6 ? `✓ FAR (${Number(farRatio).toFixed(2)})` : `✕ FAR Exceeded (${Number(farRatio).toFixed(2)})`}
+            <span style={{ background: farRatio <= 1.6 ? "rgba(16, 185, 129, 0.15)" : "rgba(239, 68, 68, 0.15)", color: farRatio <= 1.6 ? "#34d399" : "#f87171", padding: "2px 8px", borderRadius: "4px", fontSize: "0.72rem", fontWeight: 600 }}>
+              {farRatio <= 1.6 ? `✓ FAR (${farRatio.toFixed(2)})` : `✕ FAR Exceeded (${farRatio.toFixed(2)})`}
             </span>
             <span style={{ background: "rgba(16, 185, 129, 0.15)", color: "#34d399", padding: "2px 8px", borderRadius: "4px", fontSize: "0.72rem", fontWeight: 600 }}>
               ✓ Parking ({parkingSpaces} Car{parkingSpaces > 1 ? "s" : ""})

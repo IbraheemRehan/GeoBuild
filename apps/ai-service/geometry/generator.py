@@ -1,6 +1,6 @@
 """
-GeoBuild AI — Procedural 3D Generator
-Generates realistic, photorealistic procedural 3D GLB building models.
+GeoBuild AI — Procedural Architectural 3D Generator
+Generates photorealistic, professional procedural 3D GLB building models with PBR textures.
 Rule 11: Procedural geometry only — no AI-generated meshes.
 Rule 12: All 3D output is GLB format.
 Rule 13: Use trimesh for extrusion.
@@ -9,17 +9,26 @@ Rule 7: All internal measurements are in metres.
 """
 
 from __future__ import annotations
-import io
 import json
+import math
 import os
 from typing import Any
 import numpy as np
-from shapely.geometry import Polygon, MultiPolygon
+from shapely.geometry import Polygon, MultiPolygon, box
+import shapely.affinity as affinity
 import trimesh
 
 from models import BuildingSpec
+from geometry.textures import (
+    get_material_library,
+    create_textured_box,
+    create_uv_extruded_polygon,
+    create_recessed_window,
+    create_architectural_door,
+    create_balcony_railing,
+    create_cantilevered_pergola,
+)
 
-# Path to styles directory
 STYLES_DIR = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "styles")
 )
@@ -29,34 +38,12 @@ def load_facade_presets() -> dict[str, Any]:
     """Load facade style presets from data/styles/facade_presets.json (Rule 14)."""
     preset_file = os.path.join(STYLES_DIR, "facade_presets.json")
     if os.path.exists(preset_file):
-        with open(preset_file, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {
-        "contemporary_pakistani": {
-            "name": "Contemporary Pakistani",
-            "colors": {"primary": "#EDE7DE", "secondary": "#2B303A", "accent": "#7C4A28", "trim": "#FFFFFF"}
-        }
-    }
-
-
-def _hex_to_rgba(hex_code: str, alpha: int = 255) -> list[int]:
-    """Convert hex string (e.g. #D4B896) to [R, G, B, A] uint8."""
-    hex_clean = hex_code.lstrip("#")
-    if len(hex_clean) == 6:
-        return [
-            int(hex_clean[0:2], 16),
-            int(hex_clean[2:4], 16),
-            int(hex_clean[4:6], 16),
-            alpha,
-        ]
-    return [230, 225, 215, alpha]
-
-
-def _set_mesh_color(mesh: trimesh.Trimesh, rgba: list[int]) -> trimesh.Trimesh:
-    """Set uniform RGBA color for all vertices in a mesh."""
-    color_arr = np.tile(np.array(rgba, dtype=np.uint8), (len(mesh.vertices), 1))
-    mesh.visual.vertex_colors = color_arr
-    return mesh
+        try:
+            with open(preset_file, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
 
 
 def generate_building_glb(
@@ -65,7 +52,7 @@ def generate_building_glb(
     plot_poly: Polygon | None = None,
 ) -> tuple[bytes, dict[str, Any]]:
     """
-    Generate a complete procedural 3D GLB building model in canonical coordinates.
+    Generate a photorealistic procedural 3D GLB building model in canonical coordinates.
     Canonical orientation:
       - Front street is at minimum Y.
       - Rear of plot is at maximum Y.
@@ -75,341 +62,536 @@ def generate_building_glb(
     Returns (glb_bytes, metadata).
     """
     presets = load_facade_presets()
-    style_key = spec.facade.style if spec.facade else "contemporary_pakistani"
-    style_info = presets.get(style_key, presets.get("contemporary_pakistani", {}))
-    colors = style_info.get("colors", {
-        "primary": "#EDE7DE",
-        "secondary": "#2B303A",
-        "accent": "#7C4A28",
-        "trim": "#E2E8F0",
-    })
+    style_key = spec.facade.style if spec.facade and spec.facade.style else "contemporary_pakistani"
+    if style_key not in presets and "contemporary_pakistani" in presets:
+        style_key = "contemporary_pakistani"
 
-    primary_rgba = _hex_to_rgba(colors.get("primary", "#EDE7DE"))
-    secondary_rgba = _hex_to_rgba(colors.get("secondary", "#2B303A"))
-    accent_rgba = _hex_to_rgba(colors.get("accent", "#7C4A28"))
-    trim_rgba = _hex_to_rgba(colors.get("trim", "#E2E8F0"))
+    style_preset = presets.get(style_key, {})
+    has_jali = bool(style_preset.get("hasJali", False))
+    window_style = style_preset.get("windowStyle", "curtain_wall_mullions")
 
-    glass_rgba = [130, 185, 220, 190]
-    pavement_rgba = [60, 65, 75, 255]
-    roof_rgba = [70, 75, 82, 255]
-    tank_rgba = [45, 80, 140, 255]
-    door_rgba = [65, 40, 25, 255]
-    grass_rgba = [75, 120, 60, 255]
+    # Load unified suite of photorealistic PBR materials with seamless textures
+    mats = get_material_library(style_key)
+
+    mat_wall = mats["wall"]
+    mat_accent = mats["accent"]
+    mat_wood = mats["wood"]
+    mat_glass = mats["glass"]
+    mat_mullion = mats["mullion"]
+    mat_trim = mats["trim"]
+    mat_pavers = mats["pavers"]
+    mat_roof = mats["roof"]
+    mat_lawn = mats["lawn"]
+    mat_concrete = mats["concrete"]
+    mat_jali = mats["jali"]
+    mat_led = mats["led_warm"]
 
     meshes: list[trimesh.Trimesh] = []
 
-    floor_h = float(spec.floorHeightM)
-    floors = int(spec.floors)
+    floor_h = float(spec.floorHeightM) if spec.floorHeightM else 3.20
+    floors = max(int(spec.floors), 1)
     has_basement = bool(spec.basement)
 
-    # Buildable footprint bounds
+    # Footprint bounds
     minx, miny, maxx, maxy = footprint_poly.bounds
     b_width = maxx - minx
     b_depth = maxy - miny
     front_y = miny
 
-    # Plot bounds (if provided)
-    if plot_poly:
+    # Plot bounds
+    if plot_poly and not plot_poly.is_empty:
         pminx, pminy, pmaxx, pmaxy = plot_poly.bounds
     else:
-        pminx, pminy, pmaxx, pmaxy = minx - 0.5, miny - 3.0, maxx + 0.5, maxy + 2.0
+        pminx, pminy, pmaxx, pmaxy = minx - 0.5, miny - 2.5, maxx + 0.5, maxy + 1.5
+
+    front_setback_depth = max(front_y - pminy, 0.6)
 
     # ----------------------------------------------------
-    # 1. Driveway / Front Paved Yard & Lawn
+    # 1. Architectural Plinth Foundation (Elevated Ground Plane)
     # ----------------------------------------------------
-    front_setback_depth = front_y - pminy
-    if front_setback_depth > 1.0:
-        # Driveway slab for car parking
-        driveway_w = min(b_width, 6.0)
-        driveway_mesh = trimesh.creation.box(extents=[driveway_w, front_setback_depth - 0.2, 0.08])
-        driveway_mesh.apply_translation([-b_width * 0.15, pminy + (front_setback_depth - 0.2) * 0.5, 0.04])
-        _set_mesh_color(driveway_mesh, pavement_rgba)
+    plinth_h = 0.40
+    plinth_poly = footprint_poly.buffer(0.04)
+    if plot_poly and not plot_poly.is_empty:
+        plinth_poly = plinth_poly.intersection(plot_poly.buffer(-0.02))
+    if not plinth_poly.is_empty:
+        if isinstance(plinth_poly, MultiPolygon):
+            plinth_poly = max(plinth_poly.geoms, key=lambda g: g.area)
+        plinth_mesh = create_uv_extruded_polygon(
+            plinth_poly, height=plinth_h, material=mat_concrete, uv_meter_scale=1.5, z_offset=0.0
+        )
+        if plinth_mesh:
+            meshes.append(plinth_mesh)
+
+    # ----------------------------------------------------
+    # 2. Paved Driveway & Manicured Lawn (Front Setback)
+    # ----------------------------------------------------
+    if front_setback_depth > 0.8:
+        driveway_w = min(b_width * 0.52, 5.2)
+        driveway_d = max(front_setback_depth - 0.20, 0.6)
+        driveway_x = minx + driveway_w * 0.5 + 0.10
+        driveway_y = pminy + 0.10 + driveway_d * 0.5
+
+        driveway_mesh = create_textured_box([driveway_w, driveway_d, 0.08], mat_pavers, uv_meter_scale=1.5)
+        driveway_mesh.apply_translation([driveway_x, driveway_y, 0.04])
         meshes.append(driveway_mesh)
 
-        # Front lawn green patch on the opposite side
-        lawn_w = b_width - driveway_w - 0.4
-        if lawn_w > 1.5:
-            lawn_mesh = trimesh.creation.box(extents=[lawn_w, front_setback_depth - 0.4, 0.06])
-            lawn_mesh.apply_translation([b_width * 0.35, pminy + (front_setback_depth - 0.4) * 0.5 + 0.1, 0.03])
-            _set_mesh_color(lawn_mesh, grass_rgba)
+        # Manicured lawn on opposite side
+        lawn_w = b_width - driveway_w - 0.35
+        if lawn_w > 1.2:
+            lawn_x = maxx - lawn_w * 0.5 - 0.10
+            lawn_mesh = create_textured_box([lawn_w, driveway_d, 0.06], mat_lawn, uv_meter_scale=2.0)
+            lawn_mesh.apply_translation([lawn_x, driveway_y, 0.03])
             meshes.append(lawn_mesh)
 
+            # Modern stone walkway pavers stepping through the lawn
+            step_count = min(int(driveway_d / 0.8), 5)
+            for si in range(step_count):
+                step = create_textured_box([0.70, 0.45, 0.025], mat_roof, uv_meter_scale=1.0)
+                step_y = pminy + 0.35 + si * 0.80
+                step.apply_translation([lawn_x, step_y, 0.075])
+                meshes.append(step)
+
     # ----------------------------------------------------
-    # 2. Basement (if configured)
+    # 3. Underground Basement (if configured)
     # ----------------------------------------------------
     if has_basement:
-        base_mesh = trimesh.creation.extrude_polygon(footprint_poly, height=floor_h)
-        base_mesh.apply_translation([0, 0, -floor_h])
-        _set_mesh_color(base_mesh, [100, 105, 115, 255])
-        meshes.append(base_mesh)
+        base_mesh = create_uv_extruded_polygon(
+            footprint_poly, height=floor_h, material=mat_concrete, uv_meter_scale=2.0, z_offset=-floor_h
+        )
+        if base_mesh:
+            meshes.append(base_mesh)
 
     # ----------------------------------------------------
-    # 3. Above-Ground Floors Extrusion
+    # 4. Multi-Storey Wall Massing with Cantilevers & Terraces
     # ----------------------------------------------------
-    for f in range(floors):
-        z_start = f * floor_h
+    # Determine architectural massing archetype:
+    # On 2+ storeys: cantilevered floating upper floor or stepped terrace
+    porch_w = min(driveway_w if front_setback_depth > 0.8 else b_width * 0.48, 5.0)
+    porch_d = min(b_depth * 0.42, 5.4)
+    porch_x = minx + porch_w * 0.5
 
-        # Main floor volume
-        floor_mesh = trimesh.creation.extrude_polygon(footprint_poly, height=floor_h)
-        floor_mesh.apply_translation([0, 0, z_start])
-        _set_mesh_color(floor_mesh, primary_rgba)
-        meshes.append(floor_mesh)
+    for fl in range(floors):
+        fl_z0 = plinth_h + fl * floor_h
+        fl_z1 = fl_z0 + floor_h
 
-        # Architectural floor dividing band (Cornice / Trim slab)
-        slab_poly = footprint_poly.buffer(0.08)
-        if not slab_poly.is_empty:
-            if isinstance(slab_poly, MultiPolygon):
-                slab_poly = max(slab_poly.geoms, key=lambda g: g.area)
-            slab_mesh = trimesh.creation.extrude_polygon(slab_poly, height=0.18)
-            slab_mesh.apply_translation([0, 0, z_start + floor_h - 0.09])
-            _set_mesh_color(slab_mesh, secondary_rgba)
-            meshes.append(slab_mesh)
-
-        # Windows & Entrances on Front Facade (at y = front_y)
-        if f == 0:
-            # Ground Floor: Main Teak Entrance Door + Picture Windows
-            # Door
-            door_x = minx + b_width * 0.25
-            door = trimesh.creation.box(extents=[1.2, 0.15, 2.4])
-            door.apply_translation([door_x, front_y - 0.06, 1.2])
-            _set_mesh_color(door, door_rgba)
-            meshes.append(door)
-
-            # Drawing room large picture window
-            win_w = min(b_width * 0.45, 3.2)
-            win_h = 2.0
-            win_x = maxx - win_w * 0.5 - 0.6
-            # Frame
-            win_frame = trimesh.creation.box(extents=[win_w + 0.12, 0.18, win_h + 0.12])
-            win_frame.apply_translation([win_x, front_y - 0.06, 0.5 + win_h * 0.5])
-            _set_mesh_color(win_frame, secondary_rgba)
-            meshes.append(win_frame)
-
-            # Glass
-            win_glass = trimesh.creation.box(extents=[win_w, 0.12, win_h])
-            win_glass.apply_translation([win_x, front_y - 0.08, 0.5 + win_h * 0.5])
-            _set_mesh_color(win_glass, glass_rgba)
-            meshes.append(win_glass)
+        # Floor polygon geometry
+        if fl == 0:
+            # Ground floor: full buildable footprint
+            fl_poly = footprint_poly
+        elif fl == 1:
+            # First floor: contemporary Pakistani architecture often cantilevers forward
+            # over the entrance or steps back to create a spacious front balcony terrace!
+            if b_depth > 11.0:
+                # Stepped front terrace on right side, floating cantilever box on left side
+                cantilever_box = box(minx, front_y - 0.50, minx + porch_w, maxy)
+                fl_poly = footprint_poly.union(cantilever_box)
+            else:
+                fl_poly = footprint_poly
         else:
-            # Upper Floor: Bedroom Windows with horizontal louver bands
-            n_windows = max(2, min(4, int(b_width / 3.0)))
-            w_w = min(1.8, (b_width * 0.6) / n_windows)
-            w_h = 1.7
-            spacing = b_width / (n_windows + 1)
-            for wi in range(n_windows):
-                wx = minx + spacing * (wi + 1)
-                w_frame = trimesh.creation.box(extents=[w_w + 0.12, 0.16, w_h + 0.12])
-                w_frame.apply_translation([wx, front_y - 0.05, z_start + 0.6 + w_h * 0.5])
-                _set_mesh_color(w_frame, secondary_rgba)
-                meshes.append(w_frame)
+            # Second / Third floor: set back from front by 2.0m for rooftop terrace
+            fl_poly = footprint_poly.intersection(
+                box(minx, front_y + 1.8, maxx, maxy)
+            )
 
-                w_glass = trimesh.creation.box(extents=[w_w, 0.12, w_h])
-                w_glass.apply_translation([wx, front_y - 0.07, z_start + 0.6 + w_h * 0.5])
-                _set_mesh_color(w_glass, glass_rgba)
-                meshes.append(w_glass)
+        if plot_poly and not plot_poly.is_empty:
+            fl_poly = fl_poly.intersection(plot_poly.buffer(-0.02))
 
-    # ----------------------------------------------------
-    # 4. Covered Car Porch (Carport Portico)
-    # ----------------------------------------------------
-    cars = spec.parking.cars if spec.parking else 1
-    porch_w = min(b_width * 0.55, 3.8 if cars == 1 else 5.4)
-    porch_d = min(max(front_setback_depth * 0.85, 3.2), 4.8)
-    porch_x = minx + porch_w * 0.5 + 0.2
-    porch_h = floor_h
+        if fl_poly.is_empty:
+            fl_poly = footprint_poly
+        if isinstance(fl_poly, MultiPolygon):
+            fl_poly = max(fl_poly.geoms, key=lambda g: g.area)
 
-    # Porch Roof Slab
-    porch_slab = trimesh.creation.box(extents=[porch_w, porch_d, 0.22])
-    porch_slab.apply_translation([porch_x, front_y - porch_d * 0.5, porch_h])
-    _set_mesh_color(porch_slab, secondary_rgba)
-    meshes.append(porch_slab)
+        # Floor wall shell
+        fl_mesh = create_uv_extruded_polygon(
+            fl_poly, height=floor_h, material=mat_wall, uv_meter_scale=2.5, z_offset=fl_z0
+        )
+        if fl_mesh:
+            meshes.append(fl_mesh)
 
-    # Porch Structural Pillars (Front corners)
-    pillar1 = trimesh.creation.box(extents=[0.38, 0.38, porch_h])
-    pillar1.apply_translation([porch_x - porch_w * 0.5 + 0.22, front_y - porch_d + 0.22, porch_h * 0.5])
-    _set_mesh_color(pillar1, secondary_rgba)
-    meshes.append(pillar1)
-
-    pillar2 = trimesh.creation.box(extents=[0.38, 0.38, porch_h])
-    pillar2.apply_translation([porch_x + porch_w * 0.5 - 0.22, front_y - porch_d + 0.22, porch_h * 0.5])
-    _set_mesh_color(pillar2, secondary_rgba)
-    meshes.append(pillar2)
+        # Horizontal architectural floor band / slab reveal
+        fl_slab_poly = fl_poly.buffer(0.03)
+        if plot_poly and not plot_poly.is_empty:
+            fl_slab_poly = fl_slab_poly.intersection(plot_poly.buffer(-0.01))
+        fl_slab = create_uv_extruded_polygon(
+            fl_slab_poly, height=0.22, material=mat_trim, uv_meter_scale=2.0, z_offset=fl_z1 - 0.22
+        )
+        if fl_slab:
+            meshes.append(fl_slab)
 
     # ----------------------------------------------------
-    # 5. Balcony on Upper Floor (Walk-out over Porch or Cantilever)
+    # 5. Double-Height Vertical Accent Cladding Pier (Feature Tower)
     # ----------------------------------------------------
-    if floors >= 2 and (spec.facade.hasBalcony if spec.facade else True):
-        balcony_w = porch_w - 0.4
-        balcony_d = 1.4
-        balcony_z = floor_h
+    pier_w = min(1.4, b_width * 0.20)
+    pier_d = 0.38
+    pier_h = floors * floor_h + 0.60
+    pier_x = maxx - pier_w * 0.5 - 0.30
 
-        # Balcony floor slab
-        b_slab = trimesh.creation.box(extents=[balcony_w, balcony_d, 0.15])
-        b_slab.apply_translation([porch_x, front_y - balcony_d * 0.5, balcony_z + 0.15])
-        _set_mesh_color(b_slab, trim_rgba)
+    pier = create_textured_box([pier_w, pier_d, pier_h], mat_accent, uv_meter_scale=1.5)
+    pier.apply_translation([pier_x, front_y - pier_d * 0.5 + 0.10, plinth_h + pier_h * 0.5])
+    meshes.append(pier)
+
+    # Pier architectural reveal grooves & warm LED sconce lights
+    n_grooves = floors * 4
+    for gi in range(n_grooves):
+        gz = plinth_h + 0.60 + gi * 0.75
+        groove = create_textured_box([pier_w + 0.03, 0.04, 0.03], mat_mullion)
+        groove.apply_translation([pier_x, front_y - pier_d + 0.08, gz])
+        meshes.append(groove)
+
+    # Modern warm LED exterior wall sconces flanking the pier
+    sconce_z = plinth_h + 1.80
+    sconce = create_textured_box([0.10, 0.10, 0.28], mat_mullion)
+    sconce.apply_translation([pier_x, front_y - pier_d - 0.02, sconce_z])
+    meshes.append(sconce)
+
+    sconce_glow = create_textured_box([0.08, 0.06, 0.14], mat_led)
+    sconce_glow.apply_translation([pier_x, front_y - pier_d - 0.04, sconce_z])
+    meshes.append(sconce_glow)
+
+    # Optional Heritage Mughal Jali Screen on the feature pier
+    if has_jali:
+        jali_h = 2.40
+        jali_w = pier_w * 0.75
+        jali_screen = create_textured_box([jali_w, 0.04, jali_h], mat_jali, uv_meter_scale=1.0)
+        jali_screen.apply_translation([pier_x, front_y - pier_d - 0.01, plinth_h + 2.50])
+        meshes.append(jali_screen)
+
+    # ----------------------------------------------------
+    # 6. Photorealistic Recessed Windows (Ground & Upper Floors)
+    # ----------------------------------------------------
+    wall_recess = 0.16
+
+    # A. Ground Floor Main Drawing Room Window (Right side)
+    win_g_w = min(b_width - pier_w - porch_w - 0.8, 3.2)
+    if win_g_w > 1.2:
+        win_g_x = (minx + porch_w + (maxx - pier_w)) * 0.5
+        win_g_h = 1.90
+        win_g_z = plinth_h + 0.75
+        panes_x = 3 if win_g_w > 2.2 else 2
+
+        g_windows = create_recessed_window(
+            width=win_g_w,
+            height=win_g_h,
+            depth=wall_recess,
+            mat_glass=mat_glass,
+            mat_mullion=mat_mullion,
+            mat_sill=mat_accent,
+            panes_x=panes_x,
+            panes_y=1,
+            has_chajja=True,
+        )
+        for w_part in g_windows:
+            w_part.apply_translation([win_g_x, front_y, win_g_z])
+            meshes.append(w_part)
+
+    # B. Upper Floor Bedroom Windows & Balcony Glazing
+    if floors >= 2:
+        for fl_idx in range(1, floors):
+            fl_base_z = plinth_h + fl_idx * floor_h
+
+            # Left bedroom floor-to-ceiling curtain glass (above porch)
+            win_u1_w = min(porch_w * 0.80, 2.8)
+            win_u1_h = 2.20
+            win_u1_z = fl_base_z + 0.40
+            u1_windows = create_recessed_window(
+                width=win_u1_w,
+                height=win_u1_h,
+                depth=wall_recess,
+                mat_glass=mat_glass,
+                mat_mullion=mat_mullion,
+                mat_sill=mat_accent,
+                panes_x=2,
+                panes_y=2,
+                has_chajja=True,
+            )
+            for w_part in u1_windows:
+                w_part.apply_translation([porch_x, front_y, win_u1_z])
+                meshes.append(w_part)
+
+            # Right bedroom picture window
+            if win_g_w > 1.2:
+                win_u2_w = win_g_w * 0.85
+                win_u2_h = 1.60
+                win_u2_z = fl_base_z + 0.85
+                u2_windows = create_recessed_window(
+                    width=win_u2_w,
+                    height=win_u2_h,
+                    depth=wall_recess,
+                    mat_glass=mat_glass,
+                    mat_mullion=mat_mullion,
+                    mat_sill=mat_accent,
+                    panes_x=2,
+                    panes_y=1,
+                    has_chajja=True,
+                )
+                for w_part in u2_windows:
+                    w_part.apply_translation([win_g_x, front_y, win_u2_z])
+                    meshes.append(w_part)
+
+    # ----------------------------------------------------
+    # 7. Grand Main Entrance Door
+    # ----------------------------------------------------
+    door_w = 1.30
+    door_h = 2.45
+    door_x = minx + porch_w * 0.82
+    door_y = front_y + 0.35
+    door_parts = create_architectural_door(
+        width=door_w,
+        height=door_h,
+        mat_door=mat_wood,
+        mat_mullion=mat_mullion,
+        mat_trim=mat_trim,
+    )
+    for dp in door_parts:
+        dp.apply_translation([door_x, door_y, plinth_h])
+        meshes.append(dp)
+
+    # Architectural entrance porch steps (2 steps down to driveway)
+    step1 = create_textured_box([door_w + 0.60, 0.90, 0.18], mat_accent, uv_meter_scale=1.5)
+    step1.apply_translation([door_x, front_y - 0.45, plinth_h * 0.5])
+    meshes.append(step1)
+
+    step2 = create_textured_box([door_w + 0.80, 0.45, 0.12], mat_accent, uv_meter_scale=1.5)
+    step2.apply_translation([door_x, front_y - 0.90, plinth_h * 0.25])
+    meshes.append(step2)
+
+    # ----------------------------------------------------
+    # 8. Luxury Car Porch with Architectural Columns & Timber Louver Ceiling
+    # ----------------------------------------------------
+    porch_roof_h = plinth_h + floor_h
+    # Cantilevered car porch canopy slab
+    porch_canopy = create_textured_box([porch_w, porch_d + 0.20, 0.22], mat_trim, uv_meter_scale=2.0)
+    porch_canopy.apply_translation([porch_x, front_y + porch_d * 0.5, porch_roof_h - 0.11])
+    meshes.append(porch_canopy)
+
+    # Inset warm timber soffit ceiling under the porch canopy
+    porch_soffit = create_textured_box([porch_w - 0.08, porch_d + 0.10, 0.03], mat_wood, uv_meter_scale=1.5)
+    porch_soffit.apply_translation([porch_x, front_y + porch_d * 0.5, porch_roof_h - 0.23])
+    meshes.append(porch_soffit)
+
+    # Recessed LED warm downlights in porch ceiling
+    for dl_x in [porch_x - porch_w * 0.28, porch_x + porch_w * 0.28]:
+        for dl_y in [front_y + porch_d * 0.30, front_y + porch_d * 0.70]:
+            dl = create_textured_box([0.12, 0.12, 0.02], mat_led)
+            dl.apply_translation([dl_x, dl_y, porch_roof_h - 0.25])
+            meshes.append(dl)
+
+    # Structural Porch Columns (Front-Left & Front-Right)
+    col_w = 0.38
+    col_d = 0.38
+    col_h = porch_roof_h - plinth_h - 0.22
+    for cx in [minx + col_w * 0.5 + 0.08, minx + porch_w - col_w * 0.5]:
+        col = create_textured_box([col_w, col_d, col_h], mat_accent, uv_meter_scale=1.5)
+        col.apply_translation([cx, front_y + col_d * 0.5 + 0.05, plinth_h + col_h * 0.5])
+        meshes.append(col)
+
+    # ----------------------------------------------------
+    # 9. First-Floor Cantilever Balconies & Terraces
+    # ----------------------------------------------------
+    if floors >= 2:
+        balcony_w = porch_w * 0.90
+        balcony_d = 1.35
+        balcony_z = plinth_h + floor_h
+
+        # Projecting cantilever balcony slab
+        b_slab = create_textured_box([balcony_w, balcony_d, 0.22], mat_trim, uv_meter_scale=2.0)
+        b_slab.apply_translation([porch_x, front_y - balcony_d * 0.5 + 0.15, balcony_z + 0.11])
         meshes.append(b_slab)
 
-        # Frameless tempered glass balustrade with stainless steel cap
-        glass_railing = trimesh.creation.box(extents=[balcony_w, 0.06, 0.9])
-        glass_railing.apply_translation([porch_x, front_y - balcony_d + 0.03, balcony_z + 0.2 + 0.45])
-        _set_mesh_color(glass_railing, [140, 195, 230, 160])
-        meshes.append(glass_railing)
+        # Flooring on balcony
+        b_floor = create_textured_box([balcony_w - 0.06, balcony_d - 0.06, 0.03], mat_roof, uv_meter_scale=1.0)
+        b_floor.apply_translation([porch_x, front_y - balcony_d * 0.5 + 0.15, balcony_z + 0.235])
+        meshes.append(b_floor)
 
-        # Handrail top cap
-        handrail = trimesh.creation.box(extents=[balcony_w, 0.1, 0.06])
-        handrail.apply_translation([porch_x, front_y - balcony_d + 0.03, balcony_z + 0.2 + 0.9])
-        _set_mesh_color(handrail, secondary_rgba)
-        meshes.append(handrail)
+        # Balcony Balustrade (Tempered Glass or Louvers based on style)
+        railing_style = "louvers" if style_key == "contemporary_pakistani" else "glass"
+        railing_parts = create_balcony_railing(
+            width=balcony_w,
+            depth=balcony_d,
+            height=1.05,
+            style=railing_style,
+            mat_glass=mat_glass,
+            mat_metal=mat_mullion,
+            mat_wood=mat_wood,
+        )
+        for rp in railing_parts:
+            rp.apply_translation([porch_x, front_y - balcony_d + 0.15, balcony_z + 0.25])
+            meshes.append(rp)
+
+        # Architectural planter box integrated into balcony
+        planter_w = balcony_w * 0.40
+        planter_d = 0.35
+        planter_h = 0.55
+        p_box = create_textured_box([planter_w, planter_d, planter_h], mat_accent)
+        p_box.apply_translation([porch_x + balcony_w * 0.25, front_y - balcony_d * 0.85, balcony_z + 0.25 + planter_h * 0.5])
+        meshes.append(p_box)
+
+        # Foliage in planter
+        greenery = create_textured_box([planter_w - 0.06, planter_d - 0.06, 0.25], mat_lawn)
+        greenery.apply_translation([porch_x + balcony_w * 0.25, front_y - balcony_d * 0.85, balcony_z + 0.25 + planter_h + 0.10])
+        meshes.append(greenery)
 
     # ----------------------------------------------------
-    # 6. Traditional Pakistani Jali Screen Feature Wall
+    # 10. Rooftop Terrace, Parapet & Cantilever Pergola
     # ----------------------------------------------------
-    if spec.facade and spec.facade.hasJali:
-        jali_w = min(1.4, b_width * 0.25)
-        jali_h = floor_h * 0.85
-        jali_z = (floors - 1) * floor_h + 0.4
-        jali_x = maxx - jali_w * 0.5 - 0.4
-        jali_box = trimesh.creation.box(extents=[jali_w, 0.14, jali_h])
-        jali_box.apply_translation([jali_x, front_y - 0.08, jali_z + jali_h * 0.5])
-        _set_mesh_color(jali_box, accent_rgba)
-        meshes.append(jali_box)
+    roof_z = plinth_h + floors * floor_h
 
-    # ----------------------------------------------------
-    # 7. Roof Level: Parapet, Mumty (Stair Tower), Water Tank, Pergola
-    # ----------------------------------------------------
-    roof_z = floors * floor_h
+    # Roof slab with textured outdoor terrace tiles
+    roof_slab = create_uv_extruded_polygon(
+        footprint_poly, height=0.22, material=mat_trim, uv_meter_scale=2.0, z_offset=roof_z
+    )
+    if roof_slab:
+        meshes.append(roof_slab)
 
-    # Main roof slab
-    roof_mesh = trimesh.creation.extrude_polygon(footprint_poly, height=0.22)
-    roof_mesh.apply_translation([0, 0, roof_z])
-    _set_mesh_color(roof_mesh, roof_rgba)
-    meshes.append(roof_mesh)
+    roof_pavers = create_uv_extruded_polygon(
+        footprint_poly.buffer(-0.15), height=0.03, material=mat_roof, uv_meter_scale=1.5, z_offset=roof_z + 0.22
+    )
+    if roof_pavers:
+        meshes.append(roof_pavers)
 
-    # Parapet wall
-    parapet_h = 1.0 if spec.rooftopTerrace else 0.8
-    inner_poly = footprint_poly.buffer(-0.25)
-    if not inner_poly.is_empty and inner_poly.area > 2.0:
-        parapet_poly = footprint_poly.difference(inner_poly)
-        if isinstance(parapet_poly, MultiPolygon):
-            parapet_poly = max(parapet_poly.geoms, key=lambda g: g.area)
-        parapet_mesh = trimesh.creation.extrude_polygon(parapet_poly, height=parapet_h)
-        parapet_mesh.apply_translation([0, 0, roof_z + 0.22])
-        _set_mesh_color(parapet_mesh, primary_rgba)
-        meshes.append(parapet_mesh)
+    # Parapet perimeter security wall (0.95m high)
+    outer_parapet = footprint_poly
+    inner_parapet = footprint_poly.buffer(-0.22)
+    if not inner_parapet.is_empty and inner_parapet.area > 5.0:
+        parapet_ring = outer_parapet.difference(inner_parapet)
+        parapet_mesh = create_uv_extruded_polygon(
+            parapet_ring, height=0.95, material=mat_wall, uv_meter_scale=2.0, z_offset=roof_z + 0.22
+        )
+        if parapet_mesh:
+            meshes.append(parapet_mesh)
 
-    # Mumty (Staircase Tower) — Real-world Pakistani concrete rooftop stair enclosure
-    mumty_w = 3.2
-    mumty_d = 3.0
-    mumty_h = 2.6
-    mumty_x = minx + mumty_w * 0.5 + 0.3
-    mumty_y = maxy - mumty_d * 0.5 - 0.3
+        # Parapet Coping Cap Stone
+        coping_poly = parapet_ring.buffer(0.02)
+        if plot_poly and not plot_poly.is_empty:
+            coping_poly = coping_poly.intersection(plot_poly.buffer(-0.01))
+        coping_mesh = create_uv_extruded_polygon(
+            coping_poly, height=0.06, material=mat_accent, uv_meter_scale=2.0, z_offset=roof_z + 1.17
+        )
+        if coping_mesh:
+            meshes.append(coping_mesh)
 
-    mumty_box = trimesh.creation.box(extents=[mumty_w, mumty_d, mumty_h])
+    # Rooftop Mumty (Stair Tower & Overhead Water Tank)
+    mumty_w = min(b_width * 0.40, 3.8)
+    mumty_d = min(b_depth * 0.35, 4.2)
+    mumty_h = 2.65
+    mumty_x = minx + mumty_w * 0.5 + 0.30
+    mumty_y = maxy - mumty_d * 0.5 - 0.30
+
+    mumty_box = create_textured_box([mumty_w, mumty_d, mumty_h], mat_wall, uv_meter_scale=2.0)
     mumty_box.apply_translation([mumty_x, mumty_y, roof_z + 0.22 + mumty_h * 0.5])
-    _set_mesh_color(mumty_box, primary_rgba)
     meshes.append(mumty_box)
 
-    # Mumty roof slab
-    mumty_slab = trimesh.creation.box(extents=[mumty_w + 0.3, mumty_d + 0.3, 0.16])
-    mumty_slab.apply_translation([mumty_x, mumty_y, roof_z + 0.22 + mumty_h + 0.08])
-    _set_mesh_color(mumty_slab, secondary_rgba)
-    meshes.append(mumty_slab)
+    # Mumty roof coping
+    mumty_roof = create_textured_box([mumty_w + 0.16, mumty_d + 0.16, 0.14], mat_accent)
+    mumty_roof.apply_translation([mumty_x, mumty_y, roof_z + 0.22 + mumty_h + 0.07])
+    meshes.append(mumty_roof)
 
-    # Overhead Water Tank (Integrated on top of the Mumty Tower)
-    if spec.waterTank:
-        tank_w, tank_l, tank_h = 1.8, 2.0, 1.4
-        tank_box = trimesh.creation.box(extents=[tank_w, tank_l, tank_h])
-        tank_box.apply_translation([mumty_x, mumty_y, roof_z + 0.22 + mumty_h + 0.16 + tank_h * 0.5])
-        _set_mesh_color(tank_box, tank_rgba)
-        meshes.append(tank_box)
+    # Overhead Water Tank Screened Architectural Enclosure
+    tank_w = min(mumty_w * 0.80, 2.2)
+    tank_d = min(mumty_d * 0.80, 2.2)
+    tank_h = 1.35
+    tank_screen = create_textured_box([tank_w, tank_d, tank_h], mat_mullion, uv_meter_scale=1.0)
+    tank_screen.apply_translation([mumty_x, mumty_y, roof_z + 0.22 + mumty_h + 0.14 + tank_h * 0.5])
+    meshes.append(tank_screen)
 
-    # Rooftop Pergola (if terrace enabled)
-    if spec.rooftopPergola and spec.rooftopTerrace:
-        perg_w = min(b_width * 0.45, 4.0)
-        perg_d = min(b_depth * 0.35, 3.8)
-        perg_x = maxx - perg_w * 0.5 - 0.5
-        perg_y = front_y + perg_d * 0.5 + 0.5
-        perg_h = 2.4
+    # Rooftop Cantilevered Timber/Metal Pergola Lounge Zone
+    pergola_w = min(b_width * 0.48, 4.5)
+    pergola_d = min(b_depth * 0.38, 4.2)
+    pergola_h = 2.60
+    pergola_x = maxx - pergola_w * 0.5 - 0.40
+    pergola_y = front_y + pergola_d * 0.5 + 0.80
 
-        # 4 Pergola Posts
-        for px in [-perg_w * 0.5, perg_w * 0.5]:
-            for py in [-perg_d * 0.5, perg_d * 0.5]:
-                post = trimesh.creation.box(extents=[0.14, 0.14, perg_h])
-                post.apply_translation([perg_x + px, perg_y + py, roof_z + 0.22 + perg_h * 0.5])
-                _set_mesh_color(post, secondary_rgba)
-                meshes.append(post)
-
-        # Pergola Top Louver Beams
-        for bi in range(6):
-            beam = trimesh.creation.box(extents=[perg_w + 0.4, 0.1, 0.14])
-            by = perg_y - perg_d * 0.5 + bi * (perg_d / 5.0)
-            beam.apply_translation([perg_x, by, roof_z + 0.22 + perg_h + 0.07])
-            _set_mesh_color(beam, accent_rgba)
-            meshes.append(beam)
-
-    # Mughal Dome Accent (if style requested)
-    if style_key == "mughal_inspired":
-        dome = trimesh.creation.icosphere(subdivisions=2, radius=1.3)
-        dome.apply_scale([1.0, 1.0, 1.35])
-        dome.apply_translation([mumty_x, mumty_y, roof_z + 0.22 + mumty_h + 0.16 + 1.2])
-        _set_mesh_color(dome, trim_rgba)
-        meshes.append(dome)
+    pergola_parts = create_cantilevered_pergola(
+        width=pergola_w,
+        depth=pergola_d,
+        height=pergola_h,
+        mat_beam=mat_mullion,
+        mat_slats=mat_wood,
+        slat_count=9,
+    )
+    for pp in pergola_parts:
+        pp.apply_translation([pergola_x, pergola_y - pergola_d * 0.5, roof_z + 0.25])
+        meshes.append(pp)
 
     # ----------------------------------------------------
-    # 8. Boundary Wall & Main Motorized Gate (Rule 11)
+    # 11. Perimeter Boundary Wall & Sliding Driveway Gate
     # ----------------------------------------------------
-    if spec.boundaryWall and plot_poly:
+    if plot_poly and not plot_poly.is_empty:
         plot_w = pmaxx - pminx
         plot_d = pmaxy - pminy
 
-        # Inner buffer for wall thickness
-        inner_plot = plot_poly.buffer(-0.24)
-        if not inner_plot.is_empty and inner_plot.area > 5.0:
-            wall_poly = plot_poly.difference(inner_plot)
-            if isinstance(wall_poly, MultiPolygon):
-                wall_poly = max(wall_poly.geoms, key=lambda g: g.area)
+        outer_plot = plot_poly.buffer(-0.06)
+        inner_plot = plot_poly.buffer(-0.25)
+        if not inner_plot.is_empty and inner_plot.area > 5.0 and not outer_plot.is_empty:
+            wall_ring = outer_plot.difference(inner_plot)
+            if isinstance(wall_ring, MultiPolygon):
+                wall_ring = max(wall_ring.geoms, key=lambda g: g.area)
 
-            wall_mesh = trimesh.creation.extrude_polygon(wall_poly, height=2.1)
-            _set_mesh_color(wall_mesh, [200, 195, 185, 255])
-            meshes.append(wall_mesh)
+            # Elegant low perimeter boundary wall (0.55m high)
+            wall_h = 0.55
+            wall_mesh = create_uv_extruded_polygon(
+                wall_ring, height=wall_h, material=mat_wall, uv_meter_scale=2.0, z_offset=0.0
+            )
+            if wall_mesh:
+                meshes.append(wall_mesh)
 
-            # Main Motorized Driveway Gate (facing the street at y = pminy)
-            gate_w = min(4.6, plot_w * 0.45)
-            gate_x = porch_x  # aligned with car porch
-            gate_h = 1.9
+            # Dark stone coping cap on boundary wall
+            coping_m = create_uv_extruded_polygon(
+                wall_ring.buffer(0.03), height=0.06, material=mat_accent, uv_meter_scale=2.0, z_offset=wall_h
+            )
+            if coping_m:
+                meshes.append(coping_m)
 
-            # Gate Pillars (left & right)
-            gp1 = trimesh.creation.box(extents=[0.55, 0.55, 2.4])
-            gp1.apply_translation([gate_x - gate_w * 0.5 - 0.27, pminy, 1.2])
-            _set_mesh_color(gp1, secondary_rgba)
+            # Main Motorized Driveway Gate (facing front street, inside pminy)
+            gp_w = 0.38
+            gp_d = 0.38
+            gp_y = pminy + 0.08 + gp_d * 0.5
+            pillar1_x = max(porch_x - porch_w * 0.5 + gp_w * 0.5, pminx + gp_w * 0.5 + 0.06)
+            pillar2_x = min(porch_x + porch_w * 0.5 - gp_w * 0.5, pmaxx - gp_w * 0.5 - 0.06)
+            actual_gate_x = (pillar1_x + pillar2_x) * 0.5
+            actual_gate_w = max((pillar2_x - gp_w * 0.5) - (pillar1_x + gp_w * 0.5), 1.4)
+            gate_h = 1.65
+
+            # Gate Pillars (left & right, strictly inside plot boundary)
+            gp1 = create_textured_box([gp_w, gp_d, 1.80], mat_accent, uv_meter_scale=1.5)
+            gp1.apply_translation([pillar1_x, gp_y, 0.90])
             meshes.append(gp1)
 
-            gp2 = trimesh.creation.box(extents=[0.55, 0.55, 2.4])
-            gp2.apply_translation([gate_x + gate_w * 0.5 + 0.27, pminy, 1.2])
-            _set_mesh_color(gp2, secondary_rgba)
+            gp2 = create_textured_box([gp_w, gp_d, 1.80], mat_accent, uv_meter_scale=1.5)
+            gp2.apply_translation([pillar2_x, gp_y, 0.90])
             meshes.append(gp2)
 
-            # Modern Sliding Gate Frame (dark charcoal)
-            gate_frame = trimesh.creation.box(extents=[gate_w, 0.1, gate_h])
-            gate_frame.apply_translation([gate_x, pminy, 0.1 + gate_h * 0.5])
-            _set_mesh_color(gate_frame, [25, 30, 38, 255])
+            # Gate Pillar Top Light Caps
+            g_light1 = create_textured_box([gp_w + 0.04, gp_d + 0.04, 0.06], mat_trim)
+            g_light1.apply_translation([pillar1_x, gp_y, 1.83])
+            meshes.append(g_light1)
+
+            g_light2 = create_textured_box([gp_w + 0.04, gp_d + 0.04, 0.06], mat_trim)
+            g_light2.apply_translation([pillar2_x, gp_y, 1.83])
+            meshes.append(g_light2)
+
+            # Luxury Sliding Gate Outer Frame (Dark Anodized Aluminum)
+            gate_frame = create_textured_box([actual_gate_w, 0.06, gate_h], mat_mullion)
+            gate_frame.apply_translation([actual_gate_x, gp_y, 0.08 + gate_h * 0.5])
             meshes.append(gate_frame)
 
-            # Horizontal Teak Wood Infill Slats
-            for si in range(6):
-                slat = trimesh.creation.box(extents=[gate_w - 0.2, 0.12, 0.14])
-                slat_z = 0.25 + si * 0.28
-                slat.apply_translation([gate_x, pminy, slat_z])
-                _set_mesh_color(slat, accent_rgba)
+            # Horizontal Burmese Teak Infill Slats
+            n_slats = 7
+            for si in range(n_slats):
+                slat = create_textured_box([actual_gate_w - 0.12, 0.05, 0.12], mat_wood, uv_meter_scale=1.5)
+                slat_z = 0.22 + si * 0.22
+                slat.apply_translation([actual_gate_x, gp_y, slat_z])
                 meshes.append(slat)
 
     # ----------------------------------------------------
-    # 9. Combine into Scene & Convert Z-Up (Trimesh) to Y-Up (glTF Standard)
+    # 12. Combine Scene & Convert to glTF 2.0 Y-Up Standard
     # ----------------------------------------------------
     scene = trimesh.Scene()
     for idx, m in enumerate(meshes):
-        scene.add_geometry(m, node_name=f"part_{idx}")
+        if m is not None and len(m.vertices) > 0 and len(m.faces) > 0:
+            scene.add_geometry(m, node_name=f"part_{idx}")
 
-    # CRITICAL: Transform from Trimesh coordinate system (Z-Up) to glTF 2.0 specification (Y-Up):
+    # Transform from Trimesh coordinate system (Z-Up) to glTF 2.0 specification (Y-Up):
     #   glTF X = Trimesh X (Width)
     #   glTF Y = Trimesh Z (Height! Mapped to UP in Cesium)
     #   glTF Z = -Trimesh Y (Depth! Mapped to North in Cesium)
@@ -423,7 +605,7 @@ def generate_building_glb(
     else:
         glb_bytes = bytes(glb_data)
 
-    total_height = round(floors * floor_h + mumty_h, 1)
+    total_height = round(plinth_h + floors * floor_h + mumty_h, 1)
     metadata = {
         "footprint_sqm": round(float(footprint_poly.area), 1),
         "total_height_m": total_height,

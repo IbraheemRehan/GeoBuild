@@ -41,9 +41,13 @@ export interface CesiumGlobeRef {
     headingDeg?: number
   ) => void;
   clearModel: () => void;
+  setBuildingRotation: (headingDeg: number) => void;
+  rotateBuilding: (degDelta: number) => number;
   toggleOrbit: (enabled?: boolean) => void;
   toggleShadows: () => boolean;
   focusPlot: (coords?: [number, number][]) => void;
+  toggleMarkings: (visible?: boolean) => boolean;
+  setMarkingsVisible: (visible: boolean) => void;
 }
 
 interface CesiumGlobeProps {
@@ -91,6 +95,8 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
     const [isPlacing, setIsPlacing] = useState(false);
     const [currentStyle, setCurrentStyle] = useState<MapStyleKey>("google_satellite");
     const [drawingPoints, setDrawingPoints] = useState<[number, number][]>([]);
+    const [showMarkings, setShowMarkings] = useState(true);
+    const showMarkingsRef = useRef(true);
 
     // Internal entity references
     const modelEntityRef = useRef<Entity | null>(null);
@@ -105,6 +111,8 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
     const dynamicDrawPolylineRef = useRef<Entity | null>(null);
     const orbitIntervalRef = useRef<number | null>(null);
     const lastPlotCenterRef = useRef<[number, number] | null>(null);
+    const buildingCenterRef = useRef<[number, number] | null>(null);
+    const buildingHeadingRef = useRef<number>(0);
 
     // Stop drawing cleanup
     const stopDrawing = useCallback(() => {
@@ -185,12 +193,64 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
       }
     }, []);
 
+    // Toggle CAD Dimension markings, numberings, and labels
+    const setMarkingsVisibleInternal = useCallback((visible: boolean) => {
+      showMarkingsRef.current = visible;
+      setShowMarkings(visible);
+
+      edgeLabelEntitiesRef.current.forEach((e) => {
+        e.show = visible;
+      });
+      markerEntitiesRef.current.forEach((e) => {
+        e.show = visible;
+      });
+      if (plotLabelEntityRef.current) {
+        plotLabelEntityRef.current.show = visible;
+      }
+      if (plotPolygonEntityRef.current) {
+        plotPolygonEntityRef.current.show = visible;
+      }
+      if (plotPolylineEntityRef.current) {
+        plotPolylineEntityRef.current.show = visible;
+      }
+    }, []);
+
+function cleanPolygonCoordinates(rawCoords: [number, number][]): [number, number][] {
+  if (rawCoords.length < 3) return rawCoords;
+  const result: [number, number][] = [];
+  for (let i = 0; i < rawCoords.length; i++) {
+    const pt = rawCoords[i];
+    if (result.length === 0) {
+      result.push(pt);
+      continue;
+    }
+    const prev = result[result.length - 1];
+    const dLat = (pt[1] - prev[1]) * 111132;
+    const dLng = (pt[0] - prev[0]) * 111132 * Math.cos(((pt[1] + prev[1]) * Math.PI) / 360);
+    const dist = Math.sqrt(dLat * dLat + dLng * dLng);
+    if (dist >= 1.0) {
+      result.push(pt);
+    }
+  }
+  if (result.length >= 3) {
+    const first = result[0];
+    const last = result[result.length - 1];
+    const dLat = (last[1] - first[1]) * 111132;
+    const dLng = (last[0] - first[0]) * 111132 * Math.cos(((first[1] + last[1]) * Math.PI) / 360);
+    const dist = Math.sqrt(dLat * dLat + dLng * dLng);
+    if (dist < 1.2) {
+      result.pop();
+    }
+  }
+  return result.length >= 3 ? result : rawCoords;
+}
 
     // Set plot polygon
     const setPlotPolygonInternal = useCallback(
-      (coords: [number, number][], label?: string) => {
+      (rawCoords: [number, number][], label?: string) => {
         const viewer = viewerRef.current;
         const Cesium = (window as any).Cesium;
+        const coords = cleanPolygonCoordinates(rawCoords);
         if (!viewer || !Cesium || coords.length < 3) return;
 
         clearPlotInternal();
@@ -203,6 +263,7 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
         // 1. Translucent plot polygon fill (clamped to terrain and 3D tiles)
         plotPolygonEntityRef.current = viewer.entities.add({
           name: "Plot Boundary Area",
+          show: showMarkingsRef.current,
           polygon: {
             hierarchy: new Cesium.PolygonHierarchy(
               Cesium.Cartesian3.fromDegreesArray(flatDegrees)
@@ -215,6 +276,7 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
         // 2. Architectural monochrome boundary polyline (crisp line at all zoom levels)
         plotPolylineEntityRef.current = viewer.entities.add({
           name: "Plot Outline",
+          show: showMarkingsRef.current,
           polyline: {
             positions: Cesium.Cartesian3.fromDegreesArray(flatLoopDegrees),
             width: 3.5,
@@ -227,6 +289,7 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
         coords.forEach((pt, idx) => {
           const marker = viewer.entities.add({
             name: `Plot Corner ${idx + 1}`,
+            show: showMarkingsRef.current,
             position: Cesium.Cartesian3.fromDegrees(pt[0], pt[1]),
             point: {
               pixelSize: 9,
@@ -251,11 +314,13 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
           const c2 = Cesium.Cartesian3.fromDegrees(p2[0], p2[1]);
           const distM = Cesium.Cartesian3.distance(c1, c2);
           const distFt = distM * 3.28084;
+          if (distM < 1.0) continue; // Skip microscopic sliver edges (e.g. 0.0 ft)
 
           const midLon = (p1[0] + p2[0]) / 2;
           const midLat = (p1[1] + p2[1]) / 2;
           const edgeTag = viewer.entities.add({
             name: `Edge ${i + 1} Dimension`,
+            show: showMarkingsRef.current,
             position: Cesium.Cartesian3.fromDegrees(midLon, midLat),
             label: {
               text: `${distFt.toFixed(1)} ft (${distM.toFixed(1)}m)`,
@@ -286,6 +351,7 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
         if (label) {
           plotLabelEntityRef.current = viewer.entities.add({
             name: "Plot Info Label",
+            show: showMarkingsRef.current,
             position: Cesium.Cartesian3.fromDegrees(centerLon, centerLat),
             label: {
               text: `📐 ${label}`,
@@ -318,7 +384,40 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
         clearInterval(orbitIntervalRef.current);
         orbitIntervalRef.current = null;
       }
+      buildingCenterRef.current = null;
+      buildingHeadingRef.current = 0;
     }, []);
+
+    // Set 3D building rotation interactively
+    const setBuildingRotationInternal = useCallback((headingDeg: number) => {
+      const viewer = viewerRef.current;
+      const Cesium = (window as any).Cesium;
+      const model = modelEntityRef.current;
+      if (!viewer || !Cesium || !model || !buildingCenterRef.current) return;
+
+      buildingHeadingRef.current = headingDeg;
+      const position = Cesium.Cartesian3.fromDegrees(
+        buildingCenterRef.current[0],
+        buildingCenterRef.current[1],
+        0.0
+      );
+      const headingRad = Cesium.Math.toRadians(headingDeg);
+      const hpr = new Cesium.HeadingPitchRoll(headingRad, 0, 0);
+      const orientation = Cesium.Transforms.headingPitchRollQuaternion(
+        position,
+        hpr
+      );
+      model.orientation = orientation;
+    }, []);
+
+    const rotateBuildingInternal = useCallback(
+      (degDelta: number) => {
+        const next = (buildingHeadingRef.current + degDelta + 360) % 360;
+        setBuildingRotationInternal(next);
+        return next;
+      },
+      [setBuildingRotationInternal]
+    );
 
     // Load 3D GLB model
     const loadGlbModelInternal = useCallback(
@@ -328,6 +427,8 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
         if (!viewer || !Cesium) return;
 
         clearModelInternal();
+        buildingCenterRef.current = center;
+        buildingHeadingRef.current = headingDeg;
 
         let finalUri = glbUri;
         if (glbUri.startsWith("data:")) {
@@ -353,15 +454,15 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
           hpr
         );
 
+        // Strict 1:1 metric scale (no artificial pixel enlargement) and ground clamping
         const modelEntity = viewer.entities.add({
           name: "GeoBuild 3D Building",
           position: position,
           orientation: orientation,
           model: {
             uri: finalUri,
-            minimumPixelSize: 64,
-            maximumScale: 20000,
             scale: 1.0,
+            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
             shadows: Cesium.ShadowMode.ENABLED,
             runAnimations: false,
           },
@@ -376,9 +477,9 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
           offset: new Cesium.HeadingPitchRange(
             Cesium.Math.toRadians((headingDeg || 0) + 25),
             Cesium.Math.toRadians(-28),
-            70.0
+            65.0
           ),
-          duration: 2.0,
+          duration: 1.8,
         });
       },
       [clearModelInternal]
@@ -457,6 +558,17 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
         const lon = Cesium.Math.toDegrees(cartographic.longitude);
         const lat = Cesium.Math.toDegrees(cartographic.latitude);
 
+        // Ignore clicks within 1.0m of the preceding point to avoid duplicate zero-length edges
+        const pts = activePointsRef.current;
+        if (pts.length > 0) {
+          const last = pts[pts.length - 1];
+          const dLat = (lat - last[1]) * 111132;
+          const dLng = (lon - last[0]) * 111132 * Math.cos(((lat + last[1]) * Math.PI) / 360);
+          if (Math.sqrt(dLat * dLat + dLng * dLng) < 1.0) {
+            return;
+          }
+        }
+
         activePointsRef.current = [...activePointsRef.current, [lon, lat]];
         const count = activePointsRef.current.length;
         setDrawingPoints([...activePointsRef.current]);
@@ -476,8 +588,8 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
       }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
       handler.setInputAction(() => {
-        if (activePointsRef.current.length >= 3) {
-          const finalCoords = [...activePointsRef.current];
+        const finalCoords = cleanPolygonCoordinates(activePointsRef.current);
+        if (finalCoords.length >= 3) {
           stopDrawing();
           setPlotPolygonInternal(finalCoords, "Custom Drawn Plot");
           onPlotDrawn?.(finalCoords);
@@ -502,8 +614,8 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
     }, [clearPlotInternal, onDrawingChange, onPlotDrawn, setPlotPolygonInternal, stopDrawing, stopPlacing]);
 
     const finishDrawingPlotInternal = useCallback(() => {
-      if (activePointsRef.current.length >= 3) {
-        const finalCoords = [...activePointsRef.current];
+      const finalCoords = cleanPolygonCoordinates(activePointsRef.current);
+      if (finalCoords.length >= 3) {
         const viewer = viewerRef.current;
         const Cesium = (window as any).Cesium;
         stopDrawing();
@@ -857,6 +969,14 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
         viewer.shadows = !viewer.shadows;
         return viewer.shadows;
       },
+      toggleMarkings: (visible?: boolean) => {
+        const next = visible !== undefined ? visible : !showMarkingsRef.current;
+        setMarkingsVisibleInternal(next);
+        return next;
+      },
+      setMarkingsVisible: setMarkingsVisibleInternal,
+      setBuildingRotation: setBuildingRotationInternal,
+      rotateBuilding: rotateBuildingInternal,
     }));
 
     // Initialize Cesium
@@ -957,12 +1077,39 @@ const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(
           };
           window.addEventListener("resize", handleWindowResize);
 
-          // Razor-sharp clarity settings for high-DPI displays & satellite zoom
+          // Photorealistic architectural visual fidelity settings
           viewer.resolutionScale = Math.min(window.devicePixelRatio || 1.0, 2.0);
-          viewer.scene.globe.maximumScreenSpaceError = 1.0; // Load highest detail tiles earlier (no blurry terrain)
+          viewer.scene.highDynamicRange = true; // HDR tone mapping for vivid PBR materials & glass reflections
+          viewer.scene.globe.enableLighting = true; // Real-world solar illumination & dynamic building shading
+          viewer.scene.globe.maximumScreenSpaceError = 1.0; // Load highest detail satellite tiles earlier
           viewer.scene.globe.tileCacheSize = 500;
           viewer.scene.globe.loadingDescendantLimit = 250;
-          viewer.scene.postProcessStages.fxaa.enabled = true; // Smooth anti-aliasing
+          viewer.scene.postProcessStages.fxaa.enabled = true; // High-precision anti-aliasing
+
+          // Crisp architectural shadow mapping
+          viewer.shadows = true;
+          if (viewer.shadowMap) {
+            viewer.shadowMap.size = 2048;
+            viewer.shadowMap.softShadows = true;
+            viewer.shadowMap.darkness = 0.45;
+          }
+
+          // Ambient Occlusion for deep architectural contact shadows under eaves and sills
+          try {
+            if (viewer.scene.postProcessStages.ambientOcclusion) {
+              viewer.scene.postProcessStages.ambientOcclusion.enabled = true;
+              viewer.scene.postProcessStages.ambientOcclusion.uniforms.intensity = 2.0;
+              viewer.scene.postProcessStages.ambientOcclusion.uniforms.bias = 0.1;
+              viewer.scene.postProcessStages.ambientOcclusion.uniforms.lengthCap = 0.5;
+            }
+          } catch {}
+
+          // Afternoon Pakistan sun angle (crisp directional facade shadows)
+          try {
+            const pkSunTime = Cesium.JulianDate.fromIso8601("2026-03-21T09:30:00Z");
+            viewer.clock.currentTime = pkSunTime;
+            viewer.clock.shouldAnimate = false;
+          } catch {}
 
           if (hasValidToken) {
             try {

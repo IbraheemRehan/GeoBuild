@@ -71,7 +71,7 @@ class TestFootprintAndSetbacks:
         w, l = 10.67, 23.70
         plot_utm = [[0.0, 0.0], [w, 0.0], [w, l], [0.0, l]]
         # Front setback 3.0m, back 3.0m, left 1.5m, right 0.0m
-        footprint_poly, footprint_sqm = compute_buildable_footprint(
+        footprint_poly, footprint_sqm, frame = compute_buildable_footprint(
             plot_utm=plot_utm,
             front_edge_idx=0,
             setbacks={"front": 3.0, "back": 3.0, "left": 1.5, "right": 0.0},
@@ -79,6 +79,48 @@ class TestFootprintAndSetbacks:
         assert footprint_poly is not None
         assert footprint_sqm > 0
         assert footprint_sqm < (w * l)  # Must be smaller than original plot
+        assert "centroid" in frame
+        assert "cesium_heading_deg" in frame
+
+    def test_canonical_frame_strict_rotation_matrix_det_1(self):
+        """Rule 18: Verify u_vec and v_vec always form a pure rigid rotation (det = +1)."""
+        import numpy as np
+        from geometry.footprint import get_canonical_frame
+
+        # Counter-clockwise rectangle
+        pts_ccw = [[0.0, 0.0], [10.0, 0.0], [10.0, 20.0], [0.0, 20.0]]
+        frame1 = get_canonical_frame(pts_ccw, front_edge_idx=0)
+        u1, v1 = frame1["u_vec"], frame1["v_vec"]
+        det1 = np.linalg.det([u1, v1])
+        assert pytest.approx(det1, rel=1e-5) == 1.0
+
+        # Clockwise rectangle (reversed drawing order)
+        pts_cw = [[0.0, 0.0], [0.0, 20.0], [10.0, 20.0], [10.0, 0.0]]
+        frame2 = get_canonical_frame(pts_cw, front_edge_idx=0)
+        u2, v2 = frame2["u_vec"], frame2["v_vec"]
+        det2 = np.linalg.det([u2, v2])
+        assert pytest.approx(det2, rel=1e-5) == 1.0
+
+    def test_custom_drawn_5_vertex_plot_with_glitch_edge(self):
+        """Simulate real user drawing with 5 corners including a 0.4m click artifact."""
+        pts = [
+            [0.0, 0.0],
+            [8.2, 0.0],       # 27 ft front edge
+            [8.2, 18.0],      # 59 ft side edge
+            [7.8, 18.3],      # 1.3 ft glitch artifact
+            [0.0, 17.7],      # 25.7 ft rear edge
+        ]
+        footprint_poly, footprint_sqm, frame = compute_buildable_footprint(
+            plot_utm=pts,
+            front_edge_idx=0,
+            setbacks={"front": 1.5, "back": 1.2, "left": 0.0, "right": 0.0},
+        )
+        assert footprint_poly is not None
+        assert footprint_sqm > 30.0
+        # Footprint must be 100% contained within the plot
+        p_poly = frame["poly_canonical"]
+        assert footprint_poly.within(p_poly.buffer(0.01))
+
 
 
 class TestFacadePresets:
@@ -104,7 +146,7 @@ class Test3DGeneration:
         # Create a standard 5 marla plot
         w, l = 7.62, 16.596
         plot_utm = [[0.0, 0.0], [w, 0.0], [w, l], [0.0, l]]
-        footprint_poly, footprint_sqm = compute_buildable_footprint(
+        footprint_poly, footprint_sqm, frame = compute_buildable_footprint(
             plot_utm=plot_utm,
             front_edge_idx=0,
             setbacks={"front": 1.5, "back": 1.5, "left": 0.0, "right": 0.0},
@@ -120,12 +162,14 @@ class Test3DGeneration:
         glb_bytes, metadata = generate_building_glb(
             footprint_poly=footprint_poly,
             spec=spec,
-            plot_utm=plot_utm,
+            plot_poly=frame["poly_canonical"],
         )
 
         assert glb_bytes is not None
-        assert len(glb_bytes) > 100
+        assert len(glb_bytes) > 500
         # GLB magic header is 'glTF' (0x46546C67 in little endian or b'glTF')
         assert glb_bytes[:4] == b"glTF"
         assert metadata["total_height_m"] > 6.0
         assert metadata["footprint_sqm"] > 0
+        assert metadata["mesh_count"] > 5
+
