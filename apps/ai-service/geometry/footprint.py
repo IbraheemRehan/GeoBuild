@@ -76,16 +76,16 @@ def get_canonical_frame(
     coords = list(plot_poly.exterior.coords)
     if coords[0] == coords[-1]:
         coords = coords[:-1]
-    n_pts = len(cleaned_utm)
+    n_pts = len(coords)
 
     centroid = plot_poly.centroid
     cx, cy = float(centroid.x), float(centroid.y)
     c_arr = np.array([cx, cy])
 
-    # 1. Select front edge from cleaned_utm vertices (skip degenerate edges < 1.0m)
+    # 1. Select front edge (skip any degenerate edges < 1.0m)
     f_idx = front_edge_idx % n_pts
-    p0 = np.array(cleaned_utm[f_idx])
-    p1 = np.array(cleaned_utm[(f_idx + 1) % n_pts])
+    p0 = np.array(coords[f_idx])
+    p1 = np.array(coords[(f_idx + 1) % n_pts])
     edge_vec = p1 - p0
     edge_len = np.linalg.norm(edge_vec)
 
@@ -93,8 +93,8 @@ def get_canonical_frame(
         # Search for the longest or most prominent edge
         best_len = 0.0
         for i in range(n_pts):
-            q0 = np.array(cleaned_utm[i])
-            q1 = np.array(cleaned_utm[(i + 1) % n_pts])
+            q0 = np.array(coords[i])
+            q1 = np.array(coords[(i + 1) % n_pts])
             v = q1 - q0
             l = np.linalg.norm(v)
             if l > best_len:
@@ -116,10 +116,24 @@ def get_canonical_frame(
     to_centroid = c_arr - midpoint
 
     # If v_vec points away from centroid, reverse BOTH u_vec and v_vec.
-    # Negating both preserves det([u, v]) = +1.0 (pure rigid rotation, NO reflection!)
+    # Negating both preserves det([u, v]) = +1.0 (rigid rotation, NO reflection!)
     if np.dot(v_vec, to_centroid) < 0:
         u_vec = -u_vec
         v_vec = -v_vec
+
+    # 3. Check aspect ratio: In Pakistani residential plots, the frontage
+    # (street width) is the shorter or equal dimension (e.g. 25x45, 35x65, 50x90).
+    # If width > 1.25 * depth, the user selected a side edge as edge 0.
+    # Apply a 90° rigid rotation so the house faces the street frontage.
+    temp_w = max(np.dot(np.array(pt) - c_arr, u_vec) for pt in coords) - min(np.dot(np.array(pt) - c_arr, u_vec) for pt in coords)
+    temp_d = max(np.dot(np.array(pt) - c_arr, v_vec) for pt in coords) - min(np.dot(np.array(pt) - c_arr, v_vec) for pt in coords)
+
+    if temp_w > 1.35 * temp_d and temp_d > 5.0:
+        # Rotate 90° CCW: u' = -v, v' = u (det = -v_x*u_y - (-v_y)*u_x = -(-u_y)*u_y - u_x*u_x = -1? No!)
+        # Rotate 90° CW: u' = v, v' = -u -> det([v, -u]) = v_x*(-u_y) - v_y*(-u_x) = -(-u_y)*u_y + u_x*u_x = +1.0!
+        u_rotated = np.array([v_vec[0], v_vec[1]])
+        v_rotated = np.array([-u_vec[0], -u_vec[1]])
+        u_vec, v_vec = u_rotated, v_rotated
 
     # 4. Project all vertices into canonical (x, y)
     canonical_coords: list[tuple[float, float]] = []

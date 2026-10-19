@@ -232,61 +232,7 @@ export default function HomePage() {
     analysis: any;
   } | null>(null);
   const [buildingRotation, setBuildingRotation] = useState<number>(0);
-  const [architecturalStyle, setArchitecturalStyle] = useState<string>("contemporary_pakistani");
   const [isOrbiting, setIsOrbiting] = useState(false);
-
-  const handleSelectArchitecturalStyle = useCallback(
-    async (styleKey: string) => {
-      setArchitecturalStyle(styleKey);
-      if (latestAnalysis?.spec && currentPlot && currentPlot.length >= 3) {
-        const updatedSpec = {
-          ...latestAnalysis.spec,
-          facade: {
-            ...latestAnalysis.spec.facade,
-            style: styleKey,
-          },
-        };
-        setIsProcessing(true);
-        setStatusMessage(`Applying ${styleKey.replace(/_/g, " ")} architectural facade & PBR textures...`);
-        try {
-          const aiUrl = process.env.NEXT_PUBLIC_AI_SERVICE_URL || "http://localhost:8000";
-          const generateRes = await fetch(`${aiUrl}/api/v1/generate`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              spec: updatedSpec,
-              plot_polygon_wgs84: currentPlot,
-              front_edge_index: 0,
-              city: selectedCity,
-            }),
-          });
-          if (generateRes.ok) {
-            const generateData = await generateRes.json();
-            const heading = generateData.heading_deg || buildingRotation || 0;
-            setBuildingRotation(heading);
-            if (generateData.glb_data_uri && generateData.center_wgs84) {
-              globeRef.current?.loadGlbModel(
-                generateData.glb_data_uri,
-                generateData.center_wgs84 as [number, number],
-                heading
-              );
-            }
-            setLatestAnalysis((prev: any) => ({
-              ...prev,
-              spec: updatedSpec,
-              generate: generateData,
-            }));
-          }
-        } catch (e) {
-          console.error("Failed to re-render style:", e);
-        } finally {
-          setIsProcessing(false);
-          setStatusMessage(null);
-        }
-      }
-    },
-    [latestAnalysis, currentPlot, selectedCity, buildingRotation]
-  );
 
   const handleRotateBuilding = useCallback((deg: number) => {
     const normalized = ((deg % 360) + 360) % 360;
@@ -507,20 +453,7 @@ export default function HomePage() {
         }
 
         const interpretData = await interpretRes.json();
-        const spec = interpretData.spec || {};
-        if (!spec.facade) spec.facade = {};
-        const pLower = prompt.toLowerCase();
-        const hasExplicitStyle =
-          pLower.includes("minimal") ||
-          pLower.includes("classical") ||
-          pLower.includes("mughal") ||
-          pLower.includes("brick") ||
-          pLower.includes("spanish") ||
-          pLower.includes("commercial") ||
-          pLower.includes("contemporary");
-        if (!hasExplicitStyle && architecturalStyle) {
-          spec.facade.style = architecturalStyle;
-        }
+        const spec = interpretData.spec;
 
         // Step 2: Ensure Plot Polygon exists
         let activePlot = currentPlot;
@@ -700,8 +633,6 @@ export default function HomePage() {
         onToggleTheme={handleToggleTheme}
         showMarkings={showMarkings}
         onToggleMarkings={handleToggleMarkings}
-        selectedArchitecturalStyle={architecturalStyle}
-        onSelectArchitecturalStyle={handleSelectArchitecturalStyle}
       />
 
       {/* 2. Floating AI Architect Copilot Drawer (Left Side) */}

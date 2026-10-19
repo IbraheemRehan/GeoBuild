@@ -15,10 +15,7 @@ class Facade(BaseModel):
         "contemporary_pakistani",
         "modern_minimal",
         "classical",
-        "mughal_inspired",
-        "industrial_brick",
-        "spanish_villa",
-        "commercial_plaza"
+        "mughal_inspired"
     ] = "contemporary_pakistani"
     primaryMaterial: Literal[
         "plaster_white",

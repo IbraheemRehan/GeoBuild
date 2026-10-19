@@ -36,7 +36,7 @@
     }
   },
   "classical": {
-    "name": "Classical Colonial",
+    "name": "Classical",
     "description": "Colonial Pakistani classical manor style with warm limestone plaster, rusticated quoins, architectural cornices, and warm timber accents",
     "primaryMaterial": "limestone_plaster",
     "accentMaterial": "carved_sandstone",
@@ -69,60 +69,6 @@
       "trim": "#D4AF37",
       "glass": "#3E6B7A",
       "mullion": "#3A211D"
-    }
-  },
-  "industrial_brick": {
-    "name": "Industrial Loft Brick",
-    "description": "Contemporary industrial loft aesthetic featuring exposed terracotta brickwork, dark structural steel framing, and crittall multi-pane grid windows",
-    "primaryMaterial": "terracotta_brick",
-    "accentMaterial": "charcoal_slate",
-    "windowStyle": "crittall_grid_windows",
-    "roofStyle": "steel_pergola_parapet",
-    "hasJali": false,
-    "hasBalcony": true,
-    "colors": {
-      "primary": "#B2533E",
-      "secondary": "#1E2024",
-      "accent": "#382923",
-      "trim": "#2D3139",
-      "glass": "#34495E",
-      "mullion": "#111215"
-    }
-  },
-  "spanish_villa": {
-    "name": "Mediterranean Spanish Villa",
-    "description": "Warm Mediterranean villa with smooth stucco plaster, arched entrance loggia, terracotta roof accents, and warm timber shutters",
-    "primaryMaterial": "limestone_plaster",
-    "accentMaterial": "terracotta_brick",
-    "windowStyle": "arched_casement_windows",
-    "roofStyle": "terracotta_parapet",
-    "hasJali": false,
-    "hasBalcony": true,
-    "colors": {
-      "primary": "#F7EFE2",
-      "secondary": "#8B4513",
-      "accent": "#A0522D",
-      "trim": "#DEB887",
-      "glass": "#4A6E82",
-      "mullion": "#2F1E14"
-    }
-  },
-  "commercial_plaza": {
-    "name": "Commercial Modern Plaza",
-    "description": "Contemporary commercial and retail plaza with full-height display glass showrooms on ground floor, structural curtain wall glazing, and rooftop MEP screen",
-    "primaryMaterial": "charcoal_slate",
-    "accentMaterial": "monolithic_white_stucco",
-    "windowStyle": "full_curtain_wall",
-    "roofStyle": "mep_screen_parapet",
-    "hasJali": false,
-    "hasBalcony": false,
-    "colors": {
-      "primary": "#1F232B",
-      "secondary": "#F3F4F6",
-      "accent": "#3B82F6",
-      "trim": "#374151",
-      "glass": "#2563EB",
-      "mullion": "#0F172A"
     }
   }
 }

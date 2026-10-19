@@ -6,32 +6,19 @@ import io
 
 AI_URL = "http://localhost:8000"
 
-def get_client():
-    try:
-        r = requests.get(f"{AI_URL}/health", timeout=1.0)
-        if r.status_code == 200:
-            return requests, AI_URL
-    except Exception:
-        pass
-    from fastapi.testclient import TestClient
-    from main import app
-    return TestClient(app), ""
-
 def test_full_pipeline():
-    client, base = get_client()
     print("1. Testing /health...")
-    r = client.get(f"{base}/health")
+    r = requests.get(f"{AI_URL}/health")
     print(f"   Status: {r.status_code}, response: {r.json()}")
     assert r.status_code == 200
 
     print("\n2. Testing /interpret with 5 Marla villa prompt...")
     prompt = "5 marla modern luxury house, 3 bedrooms, car porch, drawing room, rooftop terrace with pergola and mumty"
-    r = client.post(f"{base}/api/v1/interpret", json={"prompt": prompt, "city": "lahore"})
+    r = requests.post(f"{AI_URL}/api/v1/interpret", json={"prompt": prompt, "city": "lahore"})
     print(f"   Status: {r.status_code}")
     interpret_data = r.json()
-    spec = interpret_data.get("spec", {})
     facade_style = spec.get("facade", {}).get("style", "modern")
-    print(f"   Spec generated: floors={spec.get('floors')}, style={facade_style}, rooms={spec.get('rooms')}")
+    print(f"   Spec generated: floors={spec['floors']}, style={facade_style}, rooms={spec.get('rooms')}")
 
     print("\n3. Testing /generate with 5 Marla rectangular plot coordinates...")
     # 5 Marla ~ 7.62m x 13.72m plot centered in Lahore
@@ -55,7 +42,7 @@ def test_full_pipeline():
         "front_edge_index": 0,
         "city": "lahore",
     }
-    r = client.post(f"{base}/api/v1/generate", json=gen_payload)
+    r = requests.post(f"{AI_URL}/api/v1/generate", json=gen_payload)
     print(f"   Status: {r.status_code}")
     assert r.status_code == 200
     gen_data = r.json()
@@ -80,16 +67,16 @@ def test_full_pipeline():
             print(f"     - Mesh '{name}': {len(geom.vertices)} vertices, {len(geom.faces)} faces")
         bounds = scene.bounds
         extents = scene.extents
-        print(f"\n   3D Villa Bounding Box (glTF Y-Up Metres):")
-        print(f"     Width  (X): {extents[0]:.2f}m (Plot Width: 7.62m -> Fits: {extents[0] <= 7.62 + 0.3})")
-        print(f"     Height (Y): {extents[1]:.2f}m")
-        print(f"     Depth  (Z): {extents[2]:.2f}m (Plot Depth: 13.72m -> Fits: {extents[2] <= 13.72 + 0.3})")
-        assert extents[0] <= 7.62 + 0.35, f"Width {extents[0]} exceeds plot width 7.62"
-        assert extents[2] <= 13.72 + 0.35, f"Depth {extents[2]} exceeds plot depth 13.72"
+        print(f"\n   3D Villa Bounding Box (Metres):")
+        print(f"     Width  (X): {extents[0]:.2f}m (Plot Width: 7.62m -> Fits within: {extents[0] <= 7.62})")
+        print(f"     Depth  (Y): {extents[1]:.2f}m (Plot Depth: 13.72m -> Fits within: {extents[1] <= 13.72})")
+        print(f"     Height (Z): {extents[2]:.2f}m")
+        assert extents[0] <= 7.62 + 0.05, f"Width {extents[0]} exceeds plot width 7.62"
+        assert extents[1] <= 13.72 + 0.05, f"Depth {extents[1]} exceeds plot depth 13.72"
         print("   ✅ STRICT CONTAINMENT CONFIRMED: 100% of building geometry is within plot boundaries!")
     
     print("\n4. Testing /analyze...")
-    r = client.post(f"{base}/api/v1/analyze", json={
+    r = requests.post(f"{AI_URL}/api/v1/analyze", json={
         "spec": spec,
         "plot_area_sqm": gen_data["plot_area_sqm"],
         "city": "lahore",

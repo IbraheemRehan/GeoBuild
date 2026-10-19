@@ -1094,16 +1094,6 @@ function cleanPolygonCoordinates(rawCoords: [number, number][]): [number, number
             viewer.shadowMap.darkness = 0.45;
           }
 
-          // Ambient Occlusion for deep architectural contact shadows under eaves and sills
-          try {
-            if (viewer.scene.postProcessStages.ambientOcclusion) {
-              viewer.scene.postProcessStages.ambientOcclusion.enabled = true;
-              viewer.scene.postProcessStages.ambientOcclusion.uniforms.intensity = 2.0;
-              viewer.scene.postProcessStages.ambientOcclusion.uniforms.bias = 0.1;
-              viewer.scene.postProcessStages.ambientOcclusion.uniforms.lengthCap = 0.5;
-            }
-          } catch {}
-
           // Afternoon Pakistan sun angle (crisp directional facade shadows)
           try {
             const pkSunTime = Cesium.JulianDate.fromIso8601("2026-03-21T09:30:00Z");

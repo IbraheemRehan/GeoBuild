@@ -43,69 +43,7 @@ interface TopNavBarProps {
   onToggleTheme?: () => void;
   showMarkings?: boolean;
   onToggleMarkings?: () => void;
-  selectedArchitecturalStyle?: string;
-  onSelectArchitecturalStyle?: (styleKey: string) => void;
 }
-
-export interface ArchitecturalStyleSpec {
-  key: string;
-  name: string;
-  subtitle: string;
-  icon: string;
-  badge: string;
-}
-
-export const ARCHITECTURAL_STYLES: ArchitecturalStyleSpec[] = [
-  {
-    key: "contemporary_pakistani",
-    name: "Contemporary Pakistani",
-    subtitle: "Travertine stucco, teak louvers & slate pier",
-    icon: "🏛️",
-    badge: "Modern Villa",
-  },
-  {
-    key: "modern_minimal",
-    name: "Modern Minimalist",
-    subtitle: "Monolithic white & obsidian glass",
-    icon: "🔲",
-    badge: "Minimalist",
-  },
-  {
-    key: "classical",
-    name: "Classical Colonial",
-    subtitle: "Warm limestone & molded cornices",
-    icon: "🏛️",
-    badge: "Colonial Manor",
-  },
-  {
-    key: "mughal_inspired",
-    name: "Mughal Heritage",
-    subtitle: "Red sandstone & Makrana marble jali",
-    icon: "🕌",
-    badge: "Heritage",
-  },
-  {
-    key: "industrial_brick",
-    name: "Industrial Loft Brick",
-    subtitle: "Exposed terracotta brick & steel",
-    icon: "🧱",
-    badge: "Exposed Brick",
-  },
-  {
-    key: "spanish_villa",
-    name: "Mediterranean Villa",
-    subtitle: "Warm stucco, arches & timber shutters",
-    icon: "🇪🇸",
-    badge: "Resort Villa",
-  },
-  {
-    key: "commercial_plaza",
-    name: "Commercial Plaza",
-    subtitle: "Showroom display glass & curtain wall",
-    icon: "🏢",
-    badge: "Commercial",
-  },
-];
 
 interface PresetSpec {
   key: PlotPresetKey;
@@ -230,13 +168,10 @@ export default function TopNavBar({
   onToggleTheme,
   showMarkings = true,
   onToggleMarkings,
-  selectedArchitecturalStyle = "contemporary_pakistani",
-  onSelectArchitecturalStyle,
 }: TopNavBarProps) {
   // Dropdown states
   const [showLocationMenu, setShowLocationMenu] = useState(false);
   const [showPresetMenu, setShowPresetMenu] = useState(false);
-  const [showArchMenu, setShowArchMenu] = useState(false);
   const [showPlotDetailsMenu, setShowPlotDetailsMenu] = useState(false);
   const [showBuildingMenu, setShowBuildingMenu] = useState(false);
   const [showStyleMenu, setShowStyleMenu] = useState(false);
@@ -247,7 +182,6 @@ export default function TopNavBar({
   // Refs for click outside
   const locationRef = useRef<HTMLDivElement>(null);
   const presetRef = useRef<HTMLDivElement>(null);
-  const archRef = useRef<HTMLDivElement>(null);
   const plotDetailsRef = useRef<HTMLDivElement>(null);
   const buildingMenuRef = useRef<HTMLDivElement>(null);
   const styleRef = useRef<HTMLDivElement>(null);
@@ -261,9 +195,6 @@ export default function TopNavBar({
       }
       if (presetRef.current && !presetRef.current.contains(target)) {
         setShowPresetMenu(false);
-      }
-      if (archRef.current && !archRef.current.contains(target)) {
-        setShowArchMenu(false);
       }
       if (plotDetailsRef.current && !plotDetailsRef.current.contains(target)) {
         setShowPlotDetailsMenu(false);
@@ -280,7 +211,6 @@ export default function TopNavBar({
       if (event.key === "Escape") {
         setShowLocationMenu(false);
         setShowPresetMenu(false);
-        setShowArchMenu(false);
         setShowPlotDetailsMenu(false);
         setShowBuildingMenu(false);
         setShowStyleMenu(false);
@@ -300,13 +230,6 @@ export default function TopNavBar({
   const currentPreset = useMemo(() => {
     return PRESET_SPECS.find((p) => p.key === selectedPreset);
   }, [selectedPreset]);
-
-  const currentArchStyle = useMemo(() => {
-    return (
-      ARCHITECTURAL_STYLES.find((s) => s.key === selectedArchitecturalStyle) ||
-      ARCHITECTURAL_STYLES[0]
-    );
-  }, [selectedArchitecturalStyle]);
 
   const currentMapStyle = useMemo(() => {
     return MAP_STYLES.find((s) => s.key === mapStyle) || MAP_STYLES[0];
@@ -574,89 +497,6 @@ export default function TopNavBar({
 
                 <div className="dropdown-footer-note">
                   <span>Preliminary check — not legal or regulatory approval</span>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="nav-sub-divider" aria-hidden="true" />
-
-          {/* Architectural Facade Style Dropdown */}
-          <div className="dropdown-container" ref={archRef}>
-            <button
-              type="button"
-              onClick={() => {
-                setShowArchMenu((prev) => !prev);
-                setShowLocationMenu(false);
-                setShowPresetMenu(false);
-                setShowPlotDetailsMenu(false);
-                setShowBuildingMenu(false);
-                setShowStyleMenu(false);
-              }}
-              className={`nav-btn nav-btn-dropdown ${showArchMenu ? "active" : ""}`}
-              title="Choose from 7 Photorealistic Architectural Styles with PBR Textures"
-              aria-expanded={showArchMenu}
-            >
-              <span style={{ fontSize: "0.85rem", marginRight: "3px" }}>{currentArchStyle.icon}</span>
-              <span className="preset-active-label">{currentArchStyle.name}</span>
-              <span className="nav-btn-muted-hint">• Style</span>
-              <svg
-                className={`nav-chevron ${showArchMenu ? "rotate-180" : ""}`}
-                width="10"
-                height="10"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <polyline points="6 9 12 15 18 9" />
-              </svg>
-            </button>
-
-            {showArchMenu && (
-              <div className="nav-dropdown-menu preset-menu" role="menu" style={{ minWidth: "330px" }}>
-                <div className="dropdown-header">
-                  <span className="dropdown-section-title">Architectural Styles</span>
-                  <span className="dropdown-sub-hint">PBR Textures & Materials</span>
-                </div>
-
-                <div className="preset-options-list">
-                  {ARCHITECTURAL_STYLES.map((style) => {
-                    const isSelected = (selectedArchitecturalStyle || "contemporary_pakistani") === style.key;
-                    return (
-                      <button
-                        key={style.key}
-                        type="button"
-                        onClick={() => {
-                          onSelectArchitecturalStyle?.(style.key);
-                          setShowArchMenu(false);
-                        }}
-                        className={`preset-item-card ${isSelected ? "selected" : ""}`}
-                      >
-                        <div className="preset-card-left">
-                          <div className="preset-card-title-row">
-                            <span style={{ marginRight: "6px", fontSize: "1rem" }}>{style.icon}</span>
-                            <span className="preset-card-title">{style.name}</span>
-                            <span className="preset-card-category">{style.badge}</span>
-                          </div>
-                          <div className="preset-card-specs-row" style={{ marginTop: "3px" }}>
-                            <span style={{ fontSize: "0.74rem", color: "var(--color-text-secondary)" }}>
-                              {style.subtitle}
-                            </span>
-                          </div>
-                        </div>
-                        {isSelected && (
-                          <div className="preset-selected-check" title="Currently Selected">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                              <polyline points="20 6 9 17 4 12" />
-                            </svg>
-                          </div>
-                        )}
-                      </button>
-                    );
-                  })}
                 </div>
               </div>
             )}
